@@ -1,0 +1,17 @@
+time_based_valve — external ESPHome component
+Adaptation and modifications for Sauron, 2026-10-12.
+
+Based on ESPHome 2026.8.2:
+https://github.com/esphome/esphome/tree/2026.8.2/esphome/components/time_based/cover
+https://github.com/esphome/esphome/tree/2026.8.2/esphome/components/valve
+Copyright (c) 2019 ESPHome and its contributors.
+
+The upstream LICENSE is included verbatim. C++ code is GPLv3;
+Python and other project files are MIT, following the upstream split.
+
+Changes: independent Valve platform/namespace, position integration from a
+movement anchor, immediate movement state publication, current-position refresh
+before commands, stopping at an equal moving target, timing reset for repeated
+manual endpoint commands, duration validation, and deterministic runtime tests.
+Added start_position (asis/closed/open) and percentage end_positions_overrun,
+with full startup travel excluding overrun and bounded repeated endpoint commands.

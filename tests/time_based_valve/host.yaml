@@ -1,0 +1,44 @@
+esphome:
+  name: time-based-valve-test
+  includes:
+    - test_time_based_valve.h
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          run_time_based_valve_tests();
+          // Real generated valve actions below must also compile and run.
+      - valve.control:
+          id: test_valve
+          position: 80%
+      - valve.stop: test_valve
+      - valve.open: test_valve
+      - valve.close: test_valve
+      - valve.toggle: test_valve
+      - lambda: |-
+          puts("PASS: generated valve actions");
+          fflush(stdout);
+          exit(0);
+
+host:
+logger:
+  level: ERROR
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [time_based_valve]
+
+valve:
+  - platform: time_based_valve
+    id: test_valve
+    name: Test Valve
+    open_duration: 120s
+    close_duration: 120s
+    open_action:
+      - lambda: return;
+    close_action:
+      - lambda: return;
+    stop_action:
+      - lambda: return;

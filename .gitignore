@@ -1,0 +1,13 @@
+**/.esphome/
+**/.platformio/
+**/.pio/
+**/__pycache__/
+*.py[cod]
+.venv/
+.cache/
+.DS_Store
+**/secrets.yaml
+**/secrets.yml
+*.bin
+*.elf
+*.map

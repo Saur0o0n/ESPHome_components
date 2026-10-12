@@ -1,0 +1,46 @@
+# Fragment do włączenia przez packages lub przeniesienia do pliku urządzenia.
+# Ścieżka jest względna wobec głównego YAML-a w katalogu examples/time_based_valve/.
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [time_based_valve]
+
+valve:
+  - platform: time_based_valve
+    name: "Zawor 2"
+    id: valve_2
+    device_class: water
+    assumed_state: false
+    start_position: closed
+    end_positions_overrun: 5%
+    open_duration: 120s
+    close_duration: 120s
+    open_action:
+      - switch.turn_off: valve_2_off
+      - switch.turn_on: valve_2_on
+    close_action:
+      - switch.turn_off: valve_2_on
+      - switch.turn_on: valve_2_off
+    stop_action:
+      - switch.turn_off: valve_2_off
+      - switch.turn_off: valve_2_on
+
+  - platform: time_based_valve
+    name: "Zawor 3"
+    id: valve_3
+    device_class: water
+    assumed_state: false
+    start_position: closed
+    end_positions_overrun: 5%
+    open_duration: 120s
+    close_duration: 120s
+    open_action:
+      - switch.turn_off: valve_3_off
+      - switch.turn_on: valve_3_on
+    close_action:
+      - switch.turn_off: valve_3_on
+      - switch.turn_on: valve_3_off
+    stop_action:
+      - switch.turn_off: valve_3_off
+      - switch.turn_off: valve_3_on
