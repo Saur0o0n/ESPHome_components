@@ -1,0 +1,38 @@
+# Include alongside mixing-valves.yaml. These controls target valve_2.
+button:
+  - platform: template
+    name: "Valve 2 open gradually"
+    on_press:
+      - time_based_valve.control:
+          id: valve_2
+          position: 100%
+          movement: pulsed
+  - platform: template
+    name: "Valve 2 close gradually"
+    on_press:
+      - time_based_valve.control:
+          id: valve_2
+          position: 0%
+          movement: pulsed
+  - platform: template
+    name: "Valve 2 close continuously"
+    on_press:
+      - valve.close: valve_2
+  - platform: template
+    name: "Valve 2 stop"
+    on_press:
+      - valve.stop: valve_2
+
+number:
+  - platform: template
+    name: "Valve 2 gradual target"
+    min_value: 0
+    max_value: 100
+    step: 1
+    optimistic: true
+    initial_value: 50
+    set_action:
+      - time_based_valve.control:
+          id: valve_2
+          position: !lambda return x / 100.0f;
+          movement: pulsed

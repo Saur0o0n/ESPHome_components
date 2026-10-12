@@ -8,7 +8,7 @@ This repository contains independent components that can be selected through
 
 | Component | Platform | Description | Documentation |
 |---|---|---|---|
-| `time_based_valve` | `valve` | Time-based valve positioning, startup positioning and extra travel time at the endpoints | [Guide](docs/time_based_valve/README.md) |
+| `time_based_valve` | `valve` | Time-based valve positioning, startup positioning, pulsed movement and extra travel time at the endpoints | [Guide](docs/time_based_valve/README.md) |
 
 ## Installation
 
@@ -50,6 +50,20 @@ A complete relay example is available in
 The defaults are `start_position: asis` and `end_positions_overrun: 0%`.
 The startup positioning run does not include `end_positions_overrun`.
 
+For gradual movement, use the additional action:
+
+```yaml
+- time_based_valve.control:
+    id: mixing_valve
+    position: 30%
+    movement: pulsed
+```
+
+The default opening cycle is 2 s on / 8 s off; the closing cycle is 2 s on /
+4 s off. Each duration is configurable. Standard `valve.*` positioning commands
+remain continuous. See the [pulsed movement guide](docs/time_based_valve/README.md#pulsed-movement)
+for timing, cancellation and endpoint behavior.
+
 `main` receives ongoing updates. To pin a specific version, replace `main`
 with the full SHA of the desired commit. Select each component explicitly in `components:`.
 
@@ -79,6 +93,7 @@ In a Python environment with ESPHome 2026.8.2 installed:
 ```sh
 python tests/run.py
 esphome compile examples/time_based_valve/esp8266.yaml
+esphome compile examples/time_based_valve/esp32.yaml
 ```
 
 To run a single suite, use `python tests/run.py time_based_valve`.

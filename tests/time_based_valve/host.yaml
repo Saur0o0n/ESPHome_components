@@ -8,6 +8,23 @@ esphome:
       - lambda: |-
           run_time_based_valve_tests();
           // Real generated valve actions below must also compile and run.
+      - time_based_valve.control:
+          id: test_valve
+          position: 30%
+          movement: pulsed
+      - lambda: |-
+          valve_tests::check(id(test_valve).get_movement() == time_based_valve::Movement::PULSED,
+                             "generated pulsed action selects correct mode");
+      - time_based_valve.control:
+          id: test_valve
+          position: !lambda return 0.7f;
+          movement: !lambda return time_based_valve::Movement::CONTINUOUS;
+      - lambda: |-
+          valve_tests::check(id(test_valve).get_movement() == time_based_valve::Movement::CONTINUOUS,
+                             "templated control action switches to continuous");
+      - time_based_valve.control:
+          id: test_valve
+          position: 40%
       - valve.control:
           id: test_valve
           position: 80%

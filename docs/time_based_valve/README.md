@@ -109,7 +109,7 @@ stops are published immediately. Stopping accuracy is limited by the ESPHome loo
 
 With `manual_control: true`, every full-open/full-close command assumes a starting
 position at the opposite endpoint and runs for the full travel time.
-Repeating such a command during the normal travel phase restarts the timer.
+Repeating a continuous command during the normal travel phase restarts the timer.
 Repeating it during the additional overrun phase does not restart travel or extend
 the overrun. Intermediate positions continue to work normally.
 This option is not a GPIO input and does not measure manual valve movement.
@@ -121,6 +121,100 @@ Having built-in limit switches does not require this option to be `true`.
 The examples leave it `false`, so the relays also turn off at the endpoints.
 This option preserves behavior inherited from `cover.time_based`; it does not
 require limit switches to be connected to the ESP. It has only been tested in software.
+
+### Pulsed movement
+
+Pulsed movement is selected per command, not by a persistent switch. Standard
+`valve.open`, `valve.close` and positioning through `valve.control` always request
+continuous movement, including when taking over an active pulsed operation.
+
+The following optional valve settings control pulse and pause lengths:
+
+```yaml
+valve:
+  - platform: time_based_valve
+    # Keep your existing name, durations and actuator actions.
+    open_pulse_duration: 2s
+    open_pause_duration: 8s
+    close_pulse_duration: 2s
+    close_pause_duration: 4s
+```
+
+These are also the defaults. All four durations must be between `1ms` and
+`2147483647ms`; zero is rejected. `open_duration` and `close_duration` remain
+full **powered** travel times. Pauses do not count towards position or overrun.
+
+Use the component-specific action to request pulsed movement:
+
+```yaml
+- time_based_valve.control:
+    id: valve_2
+    position: 100%
+    movement: pulsed
+```
+
+Set `position: 0%` to close, or any intermediate percentage (for example `30%`)
+to move to that position. The direction is chosen automatically. `id` and
+`position` are required. `movement` accepts `continuous` (the default) or `pulsed`.
+Both position and movement support lambdas; lambda positions use the range 0–1:
+
+```yaml
+- time_based_valve.control:
+    id: valve_2
+    position: !lambda return 0.3f;
+    movement: !lambda return time_based_valve::Movement::PULSED;
+```
+
+A command starts with an active pulse and repeats pulse/pause cycles until the
+requested position is reached. For example, moving from 20% to 25% with 120 s
+full travel and the default opening profile takes 6 s of powered movement and
+16 s of pauses: 22 s in total. No final pause is added after reaching the target.
+
+| Command or event | Behavior |
+|---|---|
+| Repeat the same pulsed target | Keep the current pulse/pause deadline; do not restart travel |
+| Change the target in the same direction | Update the target while keeping the pulse/pause phase |
+| Reverse direction | Cancel the previous phase and start a pulse in the new direction |
+| Change to continuous movement | Resume immediately if paused; preserve travel and overrun already completed |
+| Change to pulsed movement | Start a fresh pulse window; preserve the current position |
+| `valve.stop` or toggle while active, including a pause | Stop and cancel all pending movement |
+| Reach the requested position | Finish the operation; the movement mode does not carry over to the next command |
+
+Startup positioning is always continuous. Commands received during startup queue
+both their target and movement mode; only the latest command is applied after
+startup finishes. STOP or toggle cancels the queued command as well.
+
+At an endpoint, `end_positions_overrun` runs **continuously**, without pulse pauses.
+For example, 5% of a 120 s travel duration adds 6 s of uninterrupted powered time.
+Repeated commands or switching movement mode during overrun do not restart its
+budget. A new target or STOP can interrupt it. With `has_built_in_endstop: true`,
+normal endpoint completion still leaves the direction output active as documented
+below; pauses and explicit STOP always execute `stop_action`.
+
+With `manual_control: true`, a new endpoint command requests full powered travel.
+Repeated **pulsed** commands do not restart that travel. Repeated **continuous**
+manual commands retain the legacy behavior described above. Changing only movement
+mode for the same active target preserves the remaining travel in either case.
+
+During a pause, outputs are stopped but `current_operation` remains `OPENING` or
+`CLOSING`: the overall positioning operation is still active. Use
+`id(valve_2).is_paused()` to inspect the pause and `get_movement()` to inspect the
+command mode. Preferences are saved when the operation ends or is explicitly
+stopped, not after every pulse. Rebooting never resumes an interrupted pulse sequence.
+
+Pulse timing has the same loop-latency limits as ordinary positioning. If a loop
+runs late, the estimate includes the actual elapsed time with the direction action
+active. Missed pulses are not replayed. Actuator actions must switch outputs
+immediately: external delays, raw relay control and interlock delays cannot be
+measured by this component and can make its position estimate differ from reality.
+`stop_action` runs at every pause, so it should simply stop the actuator without
+starting a new valve command or performing end-of-operation housekeeping.
+
+The standard Home Assistant valve controls remain continuous. To expose gradual
+movement in HA, use ESPHome template buttons or another automation calling this
+custom action. See [pulsed-control.yaml](../../examples/time_based_valve/pulsed-control.yaml),
+included by both the [ESP8266](../../examples/time_based_valve/esp8266.yaml) and
+[ESP32](../../examples/time_based_valve/esp32.yaml) examples.
 
 ### Extra time at the endpoints
 
@@ -201,12 +295,14 @@ not a percentage of flow or mixing ratio.
 The Python schema and configuration code generation are in `valve.py`; actuator
 logic is in the `TimeBasedValve` class in the `.h`/`.cpp` files. The class is not `final`.
 `control()` handles commands, `recompute_position_()` calculates position,
-`start_direction_()` starts actions, and `loop()` checks the target and publishes state.
+`control_position()` handles the custom action, `start_direction_()` starts a
+positioning operation, `set_drive_()` switches the actuator between pulse/pause phases,
+and `loop()` checks the target, advances phases and publishes state.
 Protected methods and fields allow subclasses to extend it; `start_direction_()`
 is virtual. The virtual `now_ms_()` allows timing tests without a physical actuator.
 
 There is no dependency on `cover`. Future extensions could include a minimum
-movement pulse, a direction-change delay or periodic valve movement.
+effective movement pulse, a direction-change delay or periodic valve movement.
 These extensions are not part of the current version.
 
 ## Validation
@@ -216,6 +312,7 @@ From the repository root, in an environment with ESPHome installed:
 ```sh
 python tests/run.py
 esphome compile examples/time_based_valve/esp8266.yaml
+esphome compile examples/time_based_valve/esp32.yaml
 ```
 
 `tests/run.py` checks YAML validation, compiles a program for the `host` platform

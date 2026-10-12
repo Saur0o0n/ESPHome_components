@@ -16,6 +16,7 @@ api:
 
 packages:
   mixing_valves: !include mixing-valves.yaml
+  pulsed_controls: !include pulsed-control.yaml
 
 switch:
   - platform: gpio

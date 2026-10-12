@@ -15,3 +15,6 @@ before commands, stopping at an equal moving target, timing reset for repeated
 manual endpoint commands, duration validation, and deterministic runtime tests.
 Added start_position (asis/closed/open) and percentage end_positions_overrun,
 with full startup travel excluding overrun and bounded repeated endpoint commands.
+Added per-command continuous/pulsed positioning, separate opening/closing pulse
+and pause durations, powered-time position accounting, uninterrupted endpoint
+overrun, and deterministic pulse/command-interruption tests.

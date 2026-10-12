@@ -18,7 +18,7 @@ BASE = {
         "components": ["time_based_valve"],
     }],
     "valve": [{
-        "platform": "time_based_valve", "name": "Test valve",
+        "platform": "time_based_valve", "name": "Test valve", "id": "test_valve",
         "open_duration": "120s", "close_duration": "120s",
         "open_action": [{"logger.log": "open"}],
         "close_action": [{"logger.log": "close"}],
@@ -28,9 +28,11 @@ BASE = {
 
 
 class SchemaTests(unittest.TestCase):
-    def validate(self, updates=None, remove=None, expected_error=None):
+    def validate(self, updates=None, remove=None, expected_error=None, action=None):
         config = copy.deepcopy(BASE)
         config["valve"][0].update(updates or {})
+        if action is not None:
+            config["esphome"]["on_boot"] = {"then": [{"time_based_valve.control": action}]}
         if remove:
             del config["valve"][0][remove]
         with tempfile.TemporaryDirectory(prefix="valve-schema-") as tmp:
@@ -45,6 +47,30 @@ class SchemaTests(unittest.TestCase):
             self.assertIn(expected_error, result.stdout)
         else:
             self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_pulse_timing(self):
+        keys = ("open_pulse_duration", "open_pause_duration", "close_pulse_duration", "close_pause_duration")
+        self.validate(dict(zip(keys, ["1s", "7s", "500ms", "3s"])))
+        for key in keys:
+            self.validate({key: "2147483647ms"})
+            for value in ("0ms", "-1ms", "2147483648ms"):
+                with self.subTest(key=key, value=value):
+                    self.validate({key: value}, expected_error=key)
+
+    def test_movement_action(self):
+        for mode in ("continuous", "pulsed"):
+            for pos in ("0%", "30%", "100%"):
+                self.validate(action={"id": "test_valve", "position": pos, "movement": mode})
+        self.validate(action={"id": "test_valve", "position": "30%"})
+
+    def test_invalid_movement_action(self):
+        self.validate(action={"id": "test_valve", "position": "30%", "movement": "slow"},
+                      expected_error="Unknown value")
+        for pos in ("-1%", "101%"):
+            self.validate(action={"id": "test_valve", "position": pos}, expected_error="position")
+        self.validate(action={"id": "test_valve"}, expected_error="position")
+        self.validate(action={"position": "30%"}, expected_error="id")
+        self.validate(action={"id": "missing_valve", "position": "30%"}, expected_error="missing_valve")
 
     def test_defaults(self):
         self.validate()

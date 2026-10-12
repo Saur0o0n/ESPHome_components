@@ -1,0 +1,43 @@
+# Complete example for compilation. GPIO assignments are illustrative,
+# not a pin selection for an existing installation. Adapt to your hardware before flashing.
+esphome:
+  name: time-based-valve-esp32
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+wifi:
+  ssid: "EXAMPLE_ONLY"
+  password: "example-password"
+
+api:
+
+packages:
+  mixing_valves: !include mixing-valves.yaml
+  pulsed_controls: !include pulsed-control.yaml
+
+switch:
+  - platform: gpio
+    id: valve_2_on
+    pin: GPIO21
+    restore_mode: ALWAYS_OFF
+    interlock: [valve_2_off]
+  - platform: gpio
+    id: valve_2_off
+    pin: GPIO19
+    restore_mode: ALWAYS_OFF
+    interlock: [valve_2_on]
+  - platform: gpio
+    id: valve_3_on
+    pin: GPIO23
+    restore_mode: ALWAYS_OFF
+    interlock: [valve_3_off]
+  - platform: gpio
+    id: valve_3_off
+    pin: GPIO22
+    restore_mode: ALWAYS_OFF
+    interlock: [valve_3_on]

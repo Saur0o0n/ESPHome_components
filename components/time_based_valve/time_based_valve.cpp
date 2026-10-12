@@ -22,6 +22,8 @@ void TimeBasedValve::dump_config() {
   ESP_LOGCONFIG(TAG, "  Start Position: %s", this->startup_position_ == StartPosition::ASIS ? "asis" :
                 (this->startup_position_ == StartPosition::OPEN ? "open" : "closed"));
   ESP_LOGCONFIG(TAG, "  End Positions Overrun: %.1f%%", this->end_positions_overrun_ * 100.0f);
+  ESP_LOGCONFIG(TAG, "  Opening Pulse/Pause: %u/%u ms", this->open_pulse_duration_, this->open_pause_duration_);
+  ESP_LOGCONFIG(TAG, "  Closing Pulse/Pause: %u/%u ms", this->close_pulse_duration_, this->close_pause_duration_);
 }
 
 void TimeBasedValve::setup() {
@@ -61,11 +63,12 @@ void TimeBasedValve::loop() {
 
   this->recompute_position_();
   const bool finished = this->endpoint_run_
-                            ? this->now_ms_() - this->endpoint_start_time_ >= this->endpoint_total_duration_
+                            ? this->endpoint_powered_time_ >= this->endpoint_total_duration_
                             : this->is_at_target_();
   if (finished) {
     const bool was_initializing = this->initializing_;
     const auto pending = this->pending_position_;
+    const auto pending_movement = this->pending_movement_;
     this->pending_position_.reset();
     this->initializing_ = false;
     this->endpoint_run_ = false;
@@ -75,16 +78,31 @@ void TimeBasedValve::loop() {
       // Match cover.time_based: the drive's own limit switch stops the motor.
       // The relay/action is deliberately left active until another command.
       this->current_operation = VALVE_OPERATION_IDLE;
+      this->movement_ = Movement::CONTINUOUS;
+      this->paused_ = false;
     } else {
       this->start_direction_(VALVE_OPERATION_IDLE);
     }
     this->publish_state();
     if (was_initializing && pending.has_value())
-      this->make_call().set_position(*pending).perform();
+      this->control_position(*pending, pending_movement);
     return;
   }
 
   const uint32_t now = this->now_ms_();
+  // Startup and endpoint overrun are continuous. Do not replay missed pulses:
+  // a delayed loop accounts for actual powered time, then starts a fresh pause.
+  if (this->movement_ == Movement::PULSED && !this->initializing_ && !this->is_overrunning_()) {
+    const bool opening = this->current_operation == VALVE_OPERATION_OPENING;
+    const uint32_t duration = this->paused_
+        ? (opening ? this->open_pause_duration_ : this->close_pause_duration_)
+        : (opening ? this->open_pulse_duration_ : this->close_pulse_duration_);
+    if (now - this->phase_started_ >= duration) {
+      this->paused_ = !this->paused_;
+      this->phase_started_ = now;
+      this->set_drive_(this->paused_ ? VALVE_OPERATION_IDLE : this->current_operation);
+    }
+  }
   if (now - this->last_publish_time_ >= 1000) {
     this->last_publish_time_ = now;
     this->publish_state(false);
@@ -120,60 +138,90 @@ void TimeBasedValve::control(const ValveCall &call) {
   if (!requested.has_value())
     return;
 
-  const float pos = *requested;
-  if (!std::isfinite(pos)) {
-    ESP_LOGW(TAG, "Ignoring non-finite target position");
+  this->control_position(*requested, Movement::CONTINUOUS);
+}
+
+void TimeBasedValve::control_position(float pos, Movement movement) {
+  if (!std::isfinite(pos) || pos < VALVE_CLOSED || pos > VALVE_OPEN ||
+      (movement != Movement::CONTINUOUS && movement != Movement::PULSED)) {
+    ESP_LOGW(TAG, "Ignoring invalid position or movement mode");
     return;
   }
+  this->recompute_position_();
   if (this->initializing_) {
-    // Preserve a complete reference run, then apply the latest requested target.
-    // A repeated command for the reference endpoint must not cause another run.
+    // Preserve the reference run, and remember both target and movement mode.
     if (pos == this->target_position_)
       this->pending_position_.reset();
-    else
+    else {
       this->pending_position_ = pos;
+      this->pending_movement_ = movement;
+    }
     return;
   }
-  if (this->endpoint_run_ && pos == this->target_position_ &&
-      (!this->manual_control_ ||
-       this->now_ms_() - this->endpoint_start_time_ >= this->endpoint_travel_duration_)) {
-    // Repeated endpoint commands must not extend an active overrun indefinitely.
+  const bool moving = this->current_operation != VALVE_OPERATION_IDLE;
+  const bool same_target = moving && pos == this->target_position_;
+  const bool changed_mode = movement != this->movement_;
+  if (same_target && (changed_mode || movement == Movement::PULSED ||
+      (this->endpoint_run_ && (!this->manual_control_ || this->is_overrunning_())))) {
+    // Mode changes preserve travel/overrun already completed. Repeated pulsed
+    // commands preserve pulse and pause deadlines, even with manual_control.
+    this->set_movement_(movement);
     return;
   }
   this->endpoint_run_ = false;
   this->target_position_ = pos;
   const bool endpoint = pos == VALVE_OPEN || pos == VALVE_CLOSED;
+  ValveOperation direction = VALVE_OPERATION_IDLE;
   if (this->manual_control_ && endpoint) {
-    // A physical manual control may have moved the drive without our knowledge.
-    // Relearn an endpoint by running for a full travel, including on a repeated
-    // command in the same direction. Reset the timing anchor, too.
+    // Retain legacy continuous manual-command behavior. Pulsed repeats above
+    // are idempotent, but a new endpoint command still requests full travel.
     this->position = pos == VALVE_OPEN ? VALVE_CLOSED : VALVE_OPEN;
     this->start_position_ = this->position;
-    this->start_dir_time_ = this->now_ms_();
+    this->powered_time_ = 0;
+    this->last_recompute_time_ = this->now_ms_();
     this->plan_endpoint_run_(pos);
-    this->start_direction_(pos == VALVE_OPEN ? VALVE_OPERATION_OPENING : VALVE_OPERATION_CLOSING);
+    direction = pos == VALVE_OPEN ? VALVE_OPERATION_OPENING : VALVE_OPERATION_CLOSING;
   } else if (pos == this->position) {
     if (endpoint && (this->has_built_in_endstop_ || this->end_positions_overrun_ > 0.0f)) {
       this->plan_endpoint_run_(pos);
-      this->start_direction_(pos == VALVE_OPEN ? VALVE_OPERATION_OPENING : VALVE_OPERATION_CLOSING);
-    } else if (this->current_operation != VALVE_OPERATION_IDLE) {
-      this->start_direction_(VALVE_OPERATION_IDLE);
-    } else {
+      direction = pos == VALVE_OPEN ? VALVE_OPERATION_OPENING : VALVE_OPERATION_CLOSING;
+    } else if (!moving) {
       return;
     }
   } else {
     if (endpoint)
       this->plan_endpoint_run_(pos);
-    this->start_direction_(pos < this->position ? VALVE_OPERATION_CLOSING : VALVE_OPERATION_OPENING);
+    direction = pos < this->position ? VALVE_OPERATION_CLOSING : VALVE_OPERATION_OPENING;
   }
-  // Publish OPENING/CLOSING immediately; save only when the drive stops.
+  // Set the mode before invoking direction actions. A target change in the
+  // same direction preserves an existing pause unless continuous was requested.
+  if (direction == this->current_operation)
+    this->set_movement_(movement);
+  else
+    this->movement_ = movement;
+  this->start_direction_(direction);
   this->last_publish_time_ = this->now_ms_();
   this->publish_state(this->current_operation == VALVE_OPERATION_IDLE);
 }
 
+bool TimeBasedValve::is_overrunning_() const {
+  return this->endpoint_run_ && this->endpoint_powered_time_ >= this->endpoint_travel_duration_;
+}
+
+void TimeBasedValve::set_movement_(Movement movement) {
+  if (movement == this->movement_)
+    return;
+  this->movement_ = movement;
+  this->phase_started_ = this->now_ms_();
+  if (this->paused_ && movement == Movement::CONTINUOUS) {
+    this->paused_ = false;
+    this->set_drive_(this->current_operation);
+  }
+}
+
 void TimeBasedValve::plan_endpoint_run_(float position, bool startup) {
   const uint32_t duration = position == VALVE_OPEN ? this->open_duration_ : this->close_duration_;
-  this->endpoint_start_time_ = this->now_ms_();
+  this->endpoint_powered_time_ = 0;
   this->endpoint_travel_duration_ = static_cast<uint32_t>(std::round(
       static_cast<double>(duration) * std::fabs(position - this->position)));
   const uint32_t extra = startup ? 0 : static_cast<uint32_t>(std::round(
@@ -199,37 +247,52 @@ bool TimeBasedValve::is_at_target_() const {
   return true;
 }
 
-void TimeBasedValve::start_direction_(ValveOperation direction) {
-  if (direction == this->current_operation && direction != VALVE_OPERATION_IDLE)
+void TimeBasedValve::set_drive_(ValveOperation direction, bool force) {
+  if (!force && direction == this->drive_direction_)
     return;
-
   this->recompute_position_();
   this->stop_prev_trigger_();
-  this->current_operation = direction;
-  this->start_position_ = this->position;
-  this->start_dir_time_ = this->now_ms_();
-
+  this->drive_direction_ = direction;
   Trigger<> *trigger = &this->stop_trigger_;
-  if (direction == VALVE_OPERATION_OPENING) {
-    this->last_operation_ = direction;
+  if (direction == VALVE_OPERATION_OPENING)
     trigger = &this->open_trigger_;
-  } else if (direction == VALVE_OPERATION_CLOSING) {
-    this->last_operation_ = direction;
+  else if (direction == VALVE_OPERATION_CLOSING)
     trigger = &this->close_trigger_;
-  }
   this->prev_command_trigger_ = trigger;
   trigger->trigger();
 }
 
-void TimeBasedValve::recompute_position_() {
-  if (this->current_operation == VALVE_OPERATION_IDLE)
+void TimeBasedValve::start_direction_(ValveOperation direction) {
+  if (direction == this->current_operation && direction != VALVE_OPERATION_IDLE)
     return;
-  const uint32_t elapsed = this->now_ms_() - this->start_dir_time_;
+  this->recompute_position_();
+  this->current_operation = direction;
+  this->start_position_ = this->position;
+  this->powered_time_ = 0;
+  this->last_recompute_time_ = this->now_ms_();
+  this->phase_started_ = this->last_recompute_time_;
+  this->paused_ = false;
+  if (direction == VALVE_OPERATION_IDLE) {
+    this->movement_ = Movement::CONTINUOUS;
+    this->endpoint_run_ = false;
+  } else {
+    this->last_operation_ = direction;
+  }
+  this->set_drive_(direction, true);
+}
+
+void TimeBasedValve::recompute_position_() {
+  const uint32_t now = this->now_ms_();
+  const uint32_t elapsed = now - this->last_recompute_time_;
+  this->last_recompute_time_ = now;
+  if (this->current_operation == VALVE_OPERATION_IDLE || this->drive_direction_ == VALVE_OPERATION_IDLE)
+    return;
+  this->powered_time_ += elapsed;
+  if (this->endpoint_run_)
+    this->endpoint_powered_time_ += elapsed;
   const bool opening = this->current_operation == VALVE_OPERATION_OPENING;
-  const float duration = opening ? this->open_duration_ : this->close_duration_;
-  const float distance = elapsed / duration;
-  // An absolute movement anchor avoids accumulated float error from thousands
-  // of loop iterations. Unsigned subtraction handles millis() wraparound.
+  const double duration = opening ? this->open_duration_ : this->close_duration_;
+  const float distance = this->powered_time_ / duration;
   this->position = clamp(this->start_position_ + (opening ? distance : -distance), 0.0f, 1.0f);
 }
 
