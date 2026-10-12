@@ -1,11 +1,11 @@
 # ESPHome — Time Based Valve
 
-Zewnętrzny komponent `valve` do zaworów z napędem otwórz/zamknij/stop,
-których pozycję szacuje się z czasu ruchu. Bazuje na `cover.time_based`
-z ESPHome 2026.8.2, ale dziedziczy bezpośrednio po `valve::Valve`.
-Nie tworzy encji `cover` ani nie zastępuje wbudowanego komponentu `time_based`.
+An external `valve` component for actuators controlled by open/close/stop commands,
+with position estimated from travel time. It is based on `cover.time_based`
+from ESPHome 2026.8.2 and inherits directly from `valve::Valve`.
+It does not create a `cover` entity or replace the built-in `time_based` component.
 
-## Instalacja z GitHuba
+## Installation from GitHub
 
 ```yaml
 external_components:
@@ -13,16 +13,16 @@ external_components:
     components: [time_based_valve]
 ```
 
-Wybierz to źródło zamiast źródła lokalnego z przykładu poniżej.
-Możesz przypiąć konkretny commit zamiast `main`.
+Use this source instead of the local source in the example below.
+You can pin a specific commit instead of using `main`.
 
-## Instalacja lokalna
+## Local installation
 
-Skopiuj katalog `components/time_based_valve` obok konfiguracji urządzenia:
+Copy the `components/time_based_valve` directory alongside your device configuration:
 
 ```text
 config/
-├── urzadzenie.yaml
+├── device.yaml
 └── components/
     └── time_based_valve/
         ├── __init__.py
@@ -31,7 +31,7 @@ config/
         └── time_based_valve.cpp
 ```
 
-W `urzadzenie.yaml` dodaj:
+Add the following to `device.yaml`:
 
 ```yaml
 external_components:
@@ -42,7 +42,7 @@ external_components:
 
 valve:
   - platform: time_based_valve
-    name: "Zawor 2"
+    name: "Valve 2"
     id: valve_2
     device_class: water
     assumed_state: false
@@ -64,36 +64,36 @@ valve:
       - switch.turn_off: valve_2_on
 ```
 
-Ten fragment korzysta z istniejących przełączników `valve_2_on` i `valve_2_off`.
-Przy zmianie kierunku najpierw wyłącza poprzedni przekaźnik. Komponent wywołuje
-zdefiniowane akcje, nie zarządza sam pinami ani blokadą przekaźników.
-W definicjach przełączników zachowaj wzajemny `interlock` i stan startowy
-`restore_mode: ALWAYS_OFF`. Czasy przełączenia przekaźników zależą od napędu.
+This snippet uses existing switches named `valve_2_on` and `valve_2_off`.
+When reversing direction, it turns off the previous relay first. The component
+executes the configured actions; it does not manage pins or relay interlocks itself.
+Keep a mutual `interlock` and `restore_mode: ALWAYS_OFF` in the switch definitions.
+Relay switching delays depend on the actuator.
 
-Przykład obu zaworów: [examples/mixing-valves.yaml](../../examples/time_based_valve/mixing-valves.yaml).
-Kompletna konfiguracja do sprawdzenia kompilacji:
-[examples/esp8266.yaml](../../examples/time_based_valve/esp8266.yaml). Jej GPIO i Wi-Fi są przykładowe.
-W przykładach ścieżka źródła to `../../components`, bo główny YAML leży w `examples/time_based_valve/`.
-Ścieżkę źródła lokalnego licz względem głównego YAML-a urządzenia, także gdy
-używasz `packages`.
+Example with two valves: [mixing-valves.yaml](../../examples/time_based_valve/mixing-valves.yaml).
+Complete configuration for checking compilation:
+[esp8266.yaml](../../examples/time_based_valve/esp8266.yaml). Its GPIO and Wi-Fi settings are examples.
+The examples use `../../components` because the main YAML file is in `examples/time_based_valve/`.
+Resolve local source paths relative to the device's main YAML file, including
+when using `packages`.
 
-## Funkcje i ustawienia
+## Features and settings
 
-| Ustawienie | Znaczenie | Domyślnie |
+| Setting | Description | Default |
 |---|---|---|
-| `open_duration` | Czas pełnego przejścia 0 → 100% | wymagane |
-| `close_duration` | Czas pełnego przejścia 100 → 0% | wymagane |
-| `open_action` | Uruchomienie otwierania | wymagane |
-| `close_action` | Uruchomienie zamykania | wymagane |
-| `stop_action` | Zatrzymanie ruchu | wymagane |
-| `assumed_state` | Informacja dla interfejsu o szacowanym stanie | `true` |
-| `manual_control` | Pełny przebieg przy poleceniu 0% lub 100%, także po ręcznym przestawieniu napędu | `false` |
-| `has_built_in_endstop` | Pomijanie `stop_action` na końcach zakresu, jak w `cover.time_based` | `false` |
-| `start_position` | Zachowanie na starcie: `asis`, `closed` lub `open` | `asis` |
-| `end_positions_overrun` | Dodatkowy czas na końcach, jako procent pełnego czasu danego kierunku (0–100%) | `0%` |
+| `open_duration` | Full travel time from 0% to 100% | required |
+| `close_duration` | Full travel time from 100% to 0% | required |
+| `open_action` | Action that starts opening | required |
+| `close_action` | Action that starts closing | required |
+| `stop_action` | Action that stops movement | required |
+| `assumed_state` | Indicates to the UI that the state is estimated | `true` |
+| `manual_control` | Full travel on a 0% or 100% command, allowing for an actuator that may have been moved manually | `false` |
+| `has_built_in_endstop` | Skips `stop_action` at the endpoints, as in `cover.time_based` | `false` |
+| `start_position` | Startup behavior: `asis`, `closed` or `open` | `asis` |
+| `end_positions_overrun` | Extra time at the endpoints, as a percentage of full travel time in the respective direction (0–100%) | `0%` |
 
-Pozycja ma zakres 0–100%. Obsługiwane są standardowe akcje `valve.open`,
-`valve.close`, `valve.stop`, `valve.toggle` i `valve.control`, np.:
+Position ranges from 0% to 100%. The standard `valve.open`, `valve.close`,
+`valve.stop`, `valve.toggle` and `valve.control` actions are supported, for example:
 
 ```yaml
 - valve.control:
@@ -101,138 +101,137 @@ Pozycja ma zakres 0–100%. Obsługiwane są standardowe akcje `valve.open`,
     position: 40%
 ```
 
-Po zmianie celu w czasie ruchu komponent uwzględnia dotychczasowy ruch,
-kontynuuje lub zmienia kierunek i zatrzymuje napęd po osiągnięciu celu.
-Przykład: od 20% do 50%, przy `open_duration: 120s`, otwiera przez 36 s.
-Pozycję publikuje co sekundę podczas ruchu, a rozpoczęcie ruchu i zatrzymanie
-publikuje od razu. Dokładność zatrzymania ogranicza częstotliwość pętli ESPHome.
+When the target changes during movement, the component accounts for movement
+already completed, continues or reverses direction, and stops the actuator at the target.
+For example, moving from 20% to 50% with `open_duration: 120s` takes 36 s.
+Position updates are published once per second while moving; movement starts and
+stops are published immediately. Stopping accuracy is limited by the ESPHome loop frequency.
 
-`manual_control: true` powoduje, że każde polecenie pełnego otwarcia/zamknięcia
-przyjmuje pozycję początkową na przeciwnym końcu zakresu i odmierza pełny czas.
-Ponowienie takiego polecenia podczas podstawowego przebiegu rozpoczyna
-odliczanie od nowa. Ponawianie podczas samego dodatkowego dobijania nie
-restartuje przebiegu ani nie przedłuża dobijania.
-Pozycje pośrednie nadal działają normalnie. Nie jest to wejście GPIO ani pomiar
-ręcznego ruchu zaworu.
+With `manual_control: true`, every full-open/full-close command assumes a starting
+position at the opposite endpoint and runs for the full travel time.
+Repeating such a command during the normal travel phase restarts the timer.
+Repeating it during the additional overrun phase does not restart travel or extend
+the overrun. Intermediate positions continue to work normally.
+This option is not a GPIO input and does not measure manual valve movement.
 
-`has_built_in_endstop: true` pozostawia akcję/przekaźnik kierunku aktywny po
-osiągnięciu 0% lub 100%; silnik ma zatrzymać własna krańcówka napędu.
-Przy pozycji pośredniej oraz jawnym `valve.stop` działa `stop_action`.
-Sama obecność krańcówek w napędzie nie wymaga ustawienia tej opcji na `true`.
-Przykłady pozostawiają `false`, więc przekaźniki wyłączają się także na końcach.
-Opcja zachowuje działanie odziedziczone z `cover.time_based`; nie wymaga
-podłączenia krańcówek do ESP. Sprawdzono ją tylko w testach programowych.
+With `has_built_in_endstop: true`, the direction action/relay remains active after
+reaching 0% or 100%; the actuator's own limit switch is expected to stop the motor.
+`stop_action` still runs at intermediate positions and on an explicit `valve.stop`.
+Having built-in limit switches does not require this option to be `true`.
+The examples leave it `false`, so the relays also turn off at the endpoints.
+This option preserves behavior inherited from `cover.time_based`; it does not
+require limit switches to be connected to the ESP. It has only been tested in software.
 
-### Dodatkowy czas na końcach
+### Extra time at the endpoints
 
-`end_positions_overrun: 5%` dodaje do normalnego dojazdu do 0% lub 100%
-5% pełnego czasu zamykania albo otwierania. Przy 120 s to dodatkowe 6 s.
-Przykład: od 25% do zamknięcia jest to 30 s + 6 s, a od 50% do otwarcia
-60 s + 6 s. Pozycje pośrednie nie otrzymują dodatkowego czasu.
+`end_positions_overrun: 5%` adds 5% of the full closing or opening duration
+to normal travel towards 0% or 100%. For a 120 s duration, this adds 6 s.
+For example, closing from 25% takes 30 s + 6 s, and opening from 50% takes
+60 s + 6 s. Intermediate targets receive no additional time.
 
-Przy poleceniu tego samego krańca w spoczynku, gdy pozycja już wynosi 0%
-lub 100%, wykonywany jest sam dodatkowy czas. `manual_control: true` nadal
-wymusza pełny przebieg plus zapas. Powtarzane polecenia tego samego krańca
-podczas dobijania nie przedłużają odliczania. Nowy cel, STOP lub toggle
-mogą przerwać dobijanie; nie ma automatycznego ponawiania po zatrzymaniu.
+When an endpoint command is issued while idle and the position already reads
+0% or 100% at that endpoint, only the additional time is applied.
+`manual_control: true` still forces full travel plus overrun. Repeated commands
+for the same endpoint during overrun do not extend its timer. A new target,
+STOP or toggle can interrupt overrun; it does not automatically resume after stopping.
 
-Podczas dobijania pozycja jest ograniczona do 0–100%, a `current_operation`
-nadal wskazuje ruch. Zapis pozycji następuje po zakończeniu. Samo pojawienie
-się 0%/100% (także trigger `on_open`/`on_closed`) nie oznacza końca dobijania;
-zakończenie ruchu wskazuje `IDLE`.
+During overrun, the position is clamped to 0–100%, while `current_operation`
+continues to indicate movement. The position is saved after movement finishes.
+Reaching 0%/100% (including the `on_open`/`on_closed` trigger) does not mean
+overrun is complete; `IDLE` indicates that movement has finished.
 
-Ta opcja nie korzysta z czujników krańcowych. Przy
-`has_built_in_endstop: true` po upływie dodatkowego czasu stan przechodzi
-na `IDLE`, ale `stop_action` jest pomijane zgodnie z zachowaniem tej opcji.
-Przy `false` wykonywane jest `stop_action`.
+This option does not use endpoint sensors. With `has_built_in_endstop: true`,
+the state changes to `IDLE` after the additional time, but `stop_action` is skipped
+in keeping with that option's behavior. With `false`, `stop_action` is executed.
 
-### Pozycja startowa
+### Startup position
 
-- `asis`: odtworzenie zapamiętanej pozycji bez ruchu; bez zapisu przyjmowane 50%.
-- `closed`: `close_action` przez pełne `close_duration`, następnie `stop_action`
-  i zapis pozycji 0%.
-- `open`: `open_action` przez pełne `open_duration`, następnie `stop_action`
-  i zapis pozycji 100%.
+- `asis`: restores the saved position without movement; assumes 50% if no saved position exists.
+- `closed`: runs `close_action` for the full `close_duration`, then executes `stop_action`
+  and saves a position of 0%.
+- `open`: runs `open_action` for the full `open_duration`, then executes `stop_action`
+  and saves a position of 100%.
 
-Przebieg startowy ignoruje zapamiętane położenie, `manual_control` i
-`assumed_state`. Nie dolicza `end_positions_overrun`. Na końcu zawsze
-wykonuje `stop_action`, również przy `has_built_in_endstop: true`.
-Rozpoczyna się po inicjalizacji wyjść/przełączników GPIO (priorytet 599).
+The startup positioning run ignores the saved position, `manual_control` and
+`assumed_state`. It does not add `end_positions_overrun`. It always executes
+`stop_action` at the end, even with `has_built_in_endstop: true`.
+It starts after GPIO outputs/switches have been initialized (priority 599).
 
-Podczas tego przebiegu wskazywana pozycja jest prowizorycznym oszacowaniem,
-liczonym od przeciwnego końca zakresu. `id(valve_2).is_initializing()` pozwala
-rozpoznać trwające ustalanie pozycji. Zwykłe polecenia pozycji czekają na koniec
-przebiegu; wykonywany jest ostatni cel. Polecenie krańca, do którego trwa
-przebieg startowy, usuwa oczekujący cel i nie powoduje drugiego przejazdu.
-Jawny STOP lub toggle przerywa przebieg i usuwa oczekujący cel. Po takim
-przerwaniu pozycja nadal jest tylko prowizorycznym oszacowaniem.
+During this run, the reported position is a provisional estimate calculated
+from the opposite endpoint. Use `id(valve_2).is_initializing()` to detect startup
+positioning in progress. Normal position commands wait until the run finishes;
+only the latest target is applied. A command for the startup endpoint clears
+the pending target and does not trigger a second run. An explicit STOP or toggle
+interrupts the run and clears the pending target. After an interruption,
+the position remains only a provisional estimate.
 
-Akcje otwierania i zamykania powinny uruchamiać ruch od razu. `delay` lub
-`interlock_wait_time` przed załączeniem napędu będą wliczane do czasu ruchu.
-Obsługa osobnego opóźnienia startu/zmiany kierunku nie jest jeszcze zaimplementowana.
+Opening and closing actions should start movement immediately. A `delay` or
+`interlock_wait_time` before energizing the actuator counts towards travel time.
+Separate startup/direction-change delay handling has not yet been implemented.
 
-## Uruchomienie i migracja z cover
+## Setup and migration from cover
 
-1. Wczytaj komponent przez `external_components`.
-2. Przenieś definicję z `cover:` do `valve:` i zmień platformę na `time_based_valve`.
-3. Zachowaj czasy i identyfikatory przełączników. Zmień `device_class: damper`
-   na `water` albo usuń `device_class`; `damper` jest klasą `cover`.
-4. Zmień wywołania `cover.*` na `valve.*`. W lambdach używaj operacji
-   `valve::VALVE_OPERATION_*`. `id(valve_2).position` nadal oznacza zakres 0–1.
-5. W Home Assistant zaktualizuj odwołania z encji `cover.*` na nowo odkryte
-   `valve.*`, w tym automatyzacje i dashboardy. Samo zachowanie YAML-owego `id`
-   nie zachowuje domeny encji HA.
+1. Load the component through `external_components`.
+2. Move the definition from `cover:` to `valve:` and change the platform to `time_based_valve`.
+3. Keep the durations and switch IDs. Change `device_class: damper` to `water`
+   or remove `device_class`; `damper` is a `cover` device class.
+4. Replace `cover.*` calls with `valve.*`. In lambdas, use the
+   `valve::VALVE_OPERATION_*` constants. `id(valve_2).position` still uses the 0–1 range.
+5. In Home Assistant, update references from `cover.*` entities to the newly discovered
+   `valve.*` entities, including automations and dashboards. Keeping the same YAML `id`
+   does not preserve the Home Assistant entity domain.
 
-Przy domyślnym `start_position: asis` komponent odtwarza zapisane oszacowanie
-bez ruchu; bez zapisu zaczyna od szacowanych 50%, podobnie jak `cover.time_based`.
-Zapamiętuje pozycję po zatrzymaniu; aktualizacje podczas ruchu nie zapisują jej
-co sekundę. Trwałość zapisu zależy od platformy i ustawień preferences ESPHome;
-na ESP8266 trwałe odtwarzanie po utracie zasilania wymaga odpowiedniej konfiguracji
-`restore_from_flash`. Zanik zasilania podczas ruchu może pozostawić starszy zapis.
+With the default `start_position: asis`, the component restores the saved estimate
+without movement; if there is no saved position, it starts at an estimated 50%,
+as `cover.time_based` does. It saves the position after stopping; updates while
+moving do not save it every second. Persistence depends on the platform and ESPHome
+preferences settings; on ESP8266, restoring after power loss requires an appropriate
+`restore_from_flash` configuration. A power failure during movement may leave an older saved position.
 
-Migracja nie obejmuje konwersji zapisu `cover` na `valve`. Przy pierwszym
-uruchomieniu można zsynchronizować oszacowanie z położeniem napędu przez
-`start_position: closed` lub `open`. Usuń wtedy dotychczasową sekwencję
-`on_boot`, która bezpośrednio sterowała tymi samymi przekaźnikami — zastępuje
-ją komponent. Przykłady używają `closed` i dodatkowego czasu 5% w zwykłej pracy.
-`assumed_state: false` wpływa na interfejs, nie daje sprzężenia zwrotnego.
-Procent oznacza oszacowane położenie mechaniczne, nie procent przepływu/mieszania.
+Migration does not convert saved `cover` state to `valve` state. On first startup,
+use `start_position: closed` or `open` to synchronize the estimate with the actuator's
+position. Remove any existing `on_boot` sequence that directly controls the same
+relays, since the component replaces it. The examples use `closed` and 5% overrun
+during normal operation. `assumed_state: false` affects the UI; it does not provide
+position feedback. The percentage represents estimated mechanical position,
+not a percentage of flow or mixing ratio.
 
-## Rozbudowa
+## Extending the component
 
-Pythonowy schemat i generowanie konfiguracji są w `valve.py`; logika napędu
-w klasie `TimeBasedValve` w plikach `.h`/`.cpp`. Klasa nie jest `final`.
-`control()` obsługuje komendy, `recompute_position_()` wylicza pozycję,
-`start_direction_()` uruchamia akcje, a `loop()` sprawdza cel i publikuje stan.
-Chronione metody i pola umożliwiają rozwijanie tej klasy; `start_direction_()`
-jest wirtualne. Wirtualne `now_ms_()` pozwala testować czas bez rzeczywistego napędu.
+The Python schema and configuration code generation are in `valve.py`; actuator
+logic is in the `TimeBasedValve` class in the `.h`/`.cpp` files. The class is not `final`.
+`control()` handles commands, `recompute_position_()` calculates position,
+`start_direction_()` starts actions, and `loop()` checks the target and publishes state.
+Protected methods and fields allow subclasses to extend it; `start_direction_()`
+is virtual. The virtual `now_ms_()` allows timing tests without a physical actuator.
 
-Nie ma zależności od `cover`. Można tu później dodać np. minimalny impuls
-ruchu, opóźnienie zmiany kierunku lub okresowy ruch zaworu.
-Te rozszerzenia nie są częścią obecnej wersji.
+There is no dependency on `cover`. Future extensions could include a minimum
+movement pulse, a direction-change delay or periodic valve movement.
+These extensions are not part of the current version.
 
-## Weryfikacja
+## Validation
 
-W środowisku z zainstalowanym ESPHome, z katalogu projektu:
+From the repository root, in an environment with ESPHome installed:
 
 ```sh
 python tests/run.py
 esphome compile examples/time_based_valve/esp8266.yaml
 ```
 
-`tests/run.py` sprawdza walidację YAML, kompiluje program dla platformy `host`
-i uruchamia testy C++ przeciwko rzeczywistym klasom ESPHome Valve/Automation.
-Kontrolowany zegar sprawdza m.in. przejście 20 → 50% w 36 s, różne czasy kierunków,
-zmianę celu, zmianę kierunku, STOP, toggle, pełny przebieg ręczny, krańcówki,
-odtwarzanie oszacowania, oba kierunki przebiegu startowego, dobijanie na krańcach,
-powtarzane/przerywane polecenia oraz przepełnienie `millis()`.
-Stan preferences testów trafia do tymczasowego katalogu.
+`tests/run.py` checks YAML validation, compiles a program for the `host` platform
+and runs C++ tests against the actual ESPHome Valve/Automation classes.
+A controlled clock checks movement from 20% to 50% in 36 s, different directional
+durations, target changes, direction changes, STOP, toggle, full manual travel,
+built-in limit switch behavior, estimate restoration, startup travel in both directions,
+endpoint overrun, repeated/interrupted commands and `millis()` wraparound.
+Test preferences are stored in a temporary directory.
 
-Zakres przeprowadzonych sprawdzeń opisuje [VALIDATION.md](VALIDATION.md).
-Nie przeprowadzono próby z fizycznym napędem ani odbioru encji w działającym HA.
+See [VALIDATION.md](VALIDATION.md) for the scope of completed checks.
+Testing with a physical actuator or entity discovery in a running Home Assistant
+instance has not been performed.
 
-## Pochodzenie
+## Provenance
 
-Punkt wyjścia: [ESPHome time_based/cover 2026.8.2](https://github.com/esphome/esphome/tree/2026.8.2/esphome/components/time_based/cover).
-Zachowane licencje źródłowe: GPLv3 dla C++, MIT dla Pythona i pozostałych plików.
-Szczegóły: [LICENSE](../../LICENSE) i [NOTICE](../../NOTICE).
+Based on [ESPHome time_based/cover 2026.8.2](https://github.com/esphome/esphome/tree/2026.8.2/esphome/components/time_based/cover).
+Upstream licenses are preserved: GPLv3 for C++, MIT for Python and other files.
+See [LICENSE](../../LICENSE) and [NOTICE](../../NOTICE).

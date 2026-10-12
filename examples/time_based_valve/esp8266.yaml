@@ -1,5 +1,5 @@
-# Kompletny przykład kompilacyjny. GPIO są przykładowe, nie są doborem
-# pinów do istniejącej instalacji. Nie wgrywaj bez dostosowania sprzętu.
+# Complete example for compilation. GPIO assignments are illustrative,
+# not a pin selection for an existing installation. Adapt to your hardware before flashing.
 esphome:
   name: time-based-valve-example
 

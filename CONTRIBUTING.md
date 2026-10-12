@@ -1,30 +1,31 @@
-# Dodawanie komponentów
+# Adding components
 
-Każdy komponent ma własną nazwę w formacie `snake_case` i niezależny katalog:
+Each component has its own `snake_case` name and separate directories:
 
-- `components/<nazwa>/` — źródła ESPHome, z `__init__.py` i modułem platformy;
-- `docs/<nazwa>/README.md` — instalacja, opcje, zachowanie i ograniczenia;
-- `examples/<nazwa>/` — przykładowe YAML-e bez rzeczywistych danych dostępowych;
-- `tests/<nazwa>/run.py` — punkt wejścia do sprawdzeń danego komponentu.
+- `components/<name>/` — ESPHome source, including `__init__.py` and the platform module;
+- `docs/<name>/README.md` — installation, options, behavior and limitations;
+- `examples/<name>/` — example YAML files without real credentials;
+- `tests/<name>/run.py` — entry point for the component's checks.
 
-1. Zarejestruj komponent w tabeli w głównym README.
-2. W przykładach użyj lokalnego źródła `../../components` i jawnej listy
-   `components: [<nazwa>]`. Ścieżka jest względna wobec głównego YAML-a.
-3. Dodaj testy zachowania odpowiednie do funkcji komponentu i walidację opcji.
-   Główny `tests/run.py` automatycznie wykrywa podkatalogi z własnym `run.py`.
-4. Podaj sprawdzoną wersję ESPHome i rozróżnij kompilację, testy programowe
-   oraz próbę na rzeczywistym sprzęcie.
-5. Zachowaj informacje o pochodzeniu i licencji adaptowanego kodu.
+1. Add the component to the table in the root README.
+2. In examples, use the local source `../../components` and an explicit
+   `components: [<name>]` list. The path is relative to the main YAML file.
+3. Add behavioral tests appropriate to the component and configuration validation.
+   The root `tests/run.py` automatically discovers subdirectories with their own `run.py`.
+4. State the tested ESPHome version and distinguish compilation, software tests
+   and testing on physical hardware.
+5. Preserve the provenance and license information of any adapted code.
+6. Write documentation, comments and example labels in English.
 
-Do repozytorium nie dodawaj `secrets.yaml`, prywatnych konfiguracji urządzeń,
-plików firmware, cache ani katalogów kompilacji. Przykłady powinny zawierać
-jednoznacznie fikcyjne dane lub odwołania do sekretów użytkownika.
+Do not add `secrets.yaml`, private device configurations, firmware binaries,
+caches or build directories to the repository. Examples should use clearly
+fictional credentials or references to the user's secrets.
 
-Zmiany sprawdzaj z katalogu głównego repozytorium:
+Run checks from the repository root:
 
 ```sh
 python tests/run.py
 esphome compile examples/time_based_valve/esp8266.yaml
 ```
 
-Dotychczasowy komponent zaworu jest testowany na ESPHome 2026.8.2.
+The existing valve component is tested with ESPHome 2026.8.2.

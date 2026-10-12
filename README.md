@@ -1,18 +1,18 @@
 # ESPHome components — Sauron
 
-Zewnętrzne komponenty dla [ESPHome](https://esphome.io/).
-Repozytorium zawiera niezależne komponenty, które można wybierać przez
-`external_components`. Opiekun: **Sauron**.
+External components for [ESPHome](https://esphome.io/).
+This repository contains independent components that can be selected through
+`external_components`. Maintained by **Sauron**.
 
-## Dostępne komponenty
+## Available components
 
-| Komponent | Platforma | Opis | Dokumentacja |
+| Component | Platform | Description | Documentation |
 |---|---|---|---|
-| `time_based_valve` | `valve` | Pozycjonowanie zaworu według czasu, ustalanie pozycji przy starcie i dodatkowy czas na końcach zakresu | [Instrukcja](docs/time_based_valve/README.md) |
+| `time_based_valve` | `valve` | Time-based valve positioning, startup positioning and extra travel time at the endpoints | [Guide](docs/time_based_valve/README.md) |
 
-## Instalacja
+## Installation
 
-Dodaj do YAML-a urządzenia:
+Add the following to your device configuration:
 
 ```yaml
 external_components:
@@ -20,13 +20,13 @@ external_components:
     components: [time_based_valve]
 ```
 
-Następnie skonfiguruj wybrany komponent zgodnie z jego instrukcją.
-Dla zaworu podstawowe opcje to:
+Then configure the selected component using its documentation.
+The basic valve configuration is:
 
 ```yaml
 valve:
   - platform: time_based_valve
-    name: "Zawór mieszający"
+    name: "Mixing valve"
     id: mixing_valve
     device_class: water
     open_duration: 120s
@@ -44,51 +44,51 @@ valve:
       - switch.turn_off: valve_close
 ```
 
-`valve_open` i `valve_close` to identyfikatory własnych przełączników napędu.
-Kompletny przykład z przekaźnikami znajduje się w
+`valve_open` and `valve_close` refer to your actuator's switch IDs.
+A complete relay example is available in
 [examples/time_based_valve/esp8266.yaml](examples/time_based_valve/esp8266.yaml).
-Domyślne wartości to `start_position: asis` i `end_positions_overrun: 0%`.
-Przebieg startowy nie dolicza zapasu z `end_positions_overrun`.
+The defaults are `start_position: asis` and `end_positions_overrun: 0%`.
+The startup positioning run does not include `end_positions_overrun`.
 
-`main` otrzymuje kolejne zmiany. Aby zachować konkretną wersję, zastąp `main`
-pełnym SHA wybranego commita. Każdy komponent wybiera się jawnie w `components:`.
+`main` receives ongoing updates. To pin a specific version, replace `main`
+with the full SHA of the desired commit. Select each component explicitly in `components:`.
 
-## Struktura repozytorium
+## Repository structure
 
 ```text
 components/
-  time_based_valve/       # Python + C++ komponentu
+  time_based_valve/       # component Python and C++ source
 docs/
-  time_based_valve/       # instrukcja i wyniki weryfikacji
+  time_based_valve/       # guide and validation results
 examples/
-  time_based_valve/       # konfiguracje przykładowe
+  time_based_valve/       # example configurations
 tests/
-  time_based_valve/       # testy i program host
-  run.py                 # uruchamianie testów komponentów
+  time_based_valve/       # tests and host program
+  run.py                 # component test runner
 LICENSE
 NOTICE
 ```
 
-Kolejne komponenty otrzymują analogiczne podkatalogi pod własną nazwą.
-[CONTRIBUTING.md](CONTRIBUTING.md) opisuje sposób dodania nowego komponentu.
+Additional components use the same directory layout under their own names.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on adding a component.
 
-## Weryfikacja
+## Validation
 
-W środowisku Python z ESPHome 2026.8.2:
+In a Python environment with ESPHome 2026.8.2 installed:
 
 ```sh
 python tests/run.py
 esphome compile examples/time_based_valve/esp8266.yaml
 ```
 
-Można uruchomić tylko jeden zestaw: `python tests/run.py time_based_valve`.
-Przykłady korzystają lokalnie ze źródeł tego repozytorium. Testy nie sterują
-sprzętem i nie wgrywają firmware. Wyniki i ograniczenia dla zaworu opisuje
-[raport weryfikacji](docs/time_based_valve/VALIDATION.md).
+To run a single suite, use `python tests/run.py time_based_valve`.
+The examples load component sources from this local repository. The tests do not
+operate hardware or flash firmware. See the valve's
+[validation report](docs/time_based_valve/VALIDATION.md) for results and limitations.
 
-## Licencje i pochodzenie
+## Licensing and provenance
 
-`time_based_valve` bazuje na `cover.time_based` z ESPHome 2026.8.2.
-Zachowuje podział licencyjny ESPHome: **GPLv3 dla C++**, **MIT dla Pythona
-i pozostałych plików**. Dokument [LICENSE](LICENSE) zawiera tekst źródłowej
-licencji, a [NOTICE](NOTICE) opisuje pochodzenie i modyfikacje.
+`time_based_valve` is based on `cover.time_based` from ESPHome 2026.8.2.
+It retains ESPHome's licensing split: **GPLv3 for C++**, **MIT for Python
+and other files**. [LICENSE](LICENSE) contains the upstream license text;
+[NOTICE](NOTICE) describes the source and modifications.

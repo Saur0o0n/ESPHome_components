@@ -1,5 +1,5 @@
-# Fragment do włączenia przez packages lub przeniesienia do pliku urządzenia.
-# Ścieżka jest względna wobec głównego YAML-a w katalogu examples/time_based_valve/.
+# Include this snippet through packages or copy it into your device configuration.
+# The path is relative to the main YAML file in examples/time_based_valve/.
 external_components:
   - source:
       type: local
@@ -8,7 +8,7 @@ external_components:
 
 valve:
   - platform: time_based_valve
-    name: "Zawor 2"
+    name: "Valve 2"
     id: valve_2
     device_class: water
     assumed_state: false
@@ -27,7 +27,7 @@ valve:
       - switch.turn_off: valve_2_on
 
   - platform: time_based_valve
-    name: "Zawor 3"
+    name: "Valve 3"
     id: valve_3
     device_class: water
     assumed_state: false
