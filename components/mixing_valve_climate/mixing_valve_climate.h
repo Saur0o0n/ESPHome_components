@@ -4,6 +4,8 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/automation.h"
+#include "esphome/core/preferences.h"
+#include "esphome/components/number/number.h"
 #include "esphome/components/climate/climate.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
@@ -12,7 +14,19 @@
 namespace esphome::mixing_valve_climate {
 
 enum class HeatSource : uint8_t { UNKNOWN, AVAILABLE, UNAVAILABLE };
-enum class Status : uint8_t { OFF, INITIALIZING, SENSOR_FAULT, OVERTEMPERATURE, WAITING_FOR_HEAT, IDLE, OPENING, CLOSING };
+enum class Status : uint8_t { OFF, INITIALIZING, SENSOR_FAULT, OVERTEMPERATURE, WAITING_FOR_HEAT, IDLE, OPENING, CLOSING, FAST_CLOSING };
+
+enum class Parameter : uint8_t { DEADBAND, FAST_CLOSE_OFFSET };
+class MixingValveClimate;
+
+class ParameterNumber : public number::Number {
+ public:
+  ParameterNumber(MixingValveClimate *parent, Parameter parameter) : parent_(parent), parameter_(parameter) {}
+ protected:
+  void control(float value) override;
+  MixingValveClimate *parent_;
+  Parameter parameter_;
+};
 
 class MixingValveClimate : public climate::Climate, public Component {
  public:
@@ -27,6 +41,13 @@ class MixingValveClimate : public climate::Climate, public Component {
   void set_min_target_temperature(float value) { min_target_temperature_ = value; }
   void set_max_target_temperature(float value) { max_target_temperature_ = value; }
   void set_deadband(float value) { deadband_ = value; }
+  void set_fast_close_offset(float value) { fast_close_offset_ = value; }
+  void set_fast_close_hysteresis(float value) { fast_close_hysteresis_ = value; }
+  void set_deadband_number(ParameterNumber *value) { deadband_number_ = value; }
+  void set_fast_close_offset_number(ParameterNumber *value) { fast_close_offset_number_ = value; }
+  float get_deadband() const { return deadband_; }
+  float get_fast_close_offset() const { return fast_close_offset_; }
+  void update_parameter(Parameter parameter, float value);
   void set_max_temperature(float value) { max_temperature_ = value; }
   void set_overtemperature_hysteresis(float value) { overtemperature_hysteresis_ = value; }
   void set_sensor_timeout(uint32_t value) { sensor_timeout_ = value; }
@@ -48,6 +69,13 @@ class MixingValveClimate : public climate::Climate, public Component {
   void evaluate_();
   void command_(Command command);
   void report_(Status status, climate::ClimateAction action);
+  bool valid_parameter_(Parameter parameter, float value) const;
+  void publish_parameters_();
+  struct Settings { float deadband; float fast_close_offset; };
+  ESPPreferenceObject settings_pref_;
+  ParameterNumber *deadband_number_{nullptr}, *fast_close_offset_number_{nullptr};
+  float fast_close_offset_{5}, fast_close_hysteresis_{1};
+  bool fast_closing_{false};
 
   sensor::Sensor *sensor_{nullptr};
   text_sensor::TextSensor *status_sensor_{nullptr};

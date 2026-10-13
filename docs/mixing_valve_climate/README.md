@@ -28,6 +28,12 @@ climate:
     valve_id: mixing_valve
     default_target_temperature: 30°C
     deadband: 2°C
+    fast_close_offset: 5°C
+    fast_close_hysteresis: 1°C
+    deadband_number:
+      name: Mixed water temperature tolerance
+    fast_close_offset_number:
+      name: Mixed water fast closing offset
     max_temperature: 50°C
     sensor_timeout: 30s
     default_mode: 'OFF'
@@ -51,10 +57,21 @@ For a target of **30°C** and `deadband: 2°C`:
 |---|---|
 | Below 28°C, heat available | Pulsed opening toward 100% |
 | From 28°C through 32°C, inclusive | STOP, including cancellation of pending pulses |
-| Above 32°C | Pulsed closing toward 0% |
+| Above 32°C through 37°C, before fast closing activates | Pulsed closing toward 0% |
+| Above 37°C | Continuous closing toward 0%; remain continuous until at/below 36°C |
 | Below 28°C, heat unavailable or unknown | STOP; do not open |
 | At or above `max_temperature` | Continuous closing, including in OFF |
 | Invalid or expired temperature, in AUTO | Continuous closing |
+
+Fast closing starts strictly above `target + deadband + fast_close_offset`.
+After activation it stays continuous until temperature falls to or below that
+threshold minus `fast_close_hysteresis`. For **29°C** with the defaults, fast
+closing starts **above 36°C** and returns to pulsed closing **at/below 35°C**.
+Between 35°C and 36°C the previous speed determines the current speed. Entering
+the idle band always stops motion, even after a sudden temperature drop.
+Opening remains pulsed regardless of how far temperature is below the target.
+The independent maximum-temperature protection has higher priority than these
+thresholds; at high setpoints it can activate before fast closing would.
 
 Each new measurement immediately re-evaluates the command. The loop also checks
 for timeouts and completed initialization every 100 ms, subject to ESPHome loop
@@ -91,6 +108,10 @@ reports `IDLE`. `status` distinguishes waiting, startup, and protection states.
 | `min_target_temperature` | `18°C` | Enforced minimum target |
 | `max_target_temperature` | `46°C` | Enforced maximum target |
 | `deadband` | `2°C` | Allowed deviation on **each** side of target; positive |
+| `fast_close_offset` | `5°C` | Additional excess **above the upper idle boundary** that starts continuous closing |
+| `fast_close_hysteresis` | `1°C` | Temperature fall below the fast threshold required to resume pulsed closing |
+| `deadband_number` | Omitted | Optional HA number entity for changing the tolerance at runtime |
+| `fast_close_offset_number` | Omitted | Optional HA number entity for changing the fast closing offset at runtime |
 | `max_temperature` | `50°C` | Measured-temperature threshold for continuous closing |
 | `overtemperature_hysteresis` | `2°C` | A fresh sample at/below maximum minus this difference clears protection |
 | `sensor_timeout` | `30s` | Maximum age of a received temperature sample |
@@ -115,6 +136,37 @@ A fresh finite reading automatically restores normal evaluation.
 `manual_control: true` on the linked valve is rejected because its external-button
 position assumptions conflict with automatic regulation. Hardware direction
 interlocks and immediate, simple valve open/close/stop actions remain necessary.
+
+## Runtime temperature settings in Home Assistant
+
+Configure `deadband_number` and `fast_close_offset_number` under each climate
+entity, as shown above, to expose two independent configuration numbers in HA.
+They accept ordinary number entity options such as `name`, `id`, and `mode`.
+There is no optimistic template or separate relay automation involved: a number
+command changes the controller directly and publishes its accepted value.
+
+- Both values use Celsius differences, in steps of 0.1°C.
+- Tolerance ranges from 0.1°C to the largest 0.1°C step strictly below
+  `max_temperature - max_target_temperature`. With the default 50°C/46°C
+  limits, the allowed range is **0.1–3.9°C**. This protects the whole selectable
+  setpoint range, not only the current target.
+- Fast closing offset ranges from `fast_close_hysteresis` to 20°C: **1–20°C**
+  with the default hysteresis. The reset threshold cannot be below the idle band.
+- A changed target or parameter immediately recomputes the motion decision,
+  clearing the old fast-speed latch. Repeating an unchanged value preserves the
+  hysteresis and pulse timing. Invalid dynamic values are rejected.
+- With `restore_state: true`, changed parameters are saved separately from the
+  climate mode/target and restored on reboot. YAML values are initial/fallback
+  values; changing a YAML default does not override a valid saved setting.
+  Values incompatible with new configured limits fall back to their YAML defaults.
+- With `restore_state: false`, reboot uses the YAML defaults. Normal ESPHome
+  preference flushing applies; an immediate power cut can lose a recent change.
+- `fast_close_hysteresis` remains a YAML setting, default 1°C. Only the tolerance
+  and extra fast-closing offset are exposed as runtime numbers.
+
+The status text is `fast_closing` during continuous temperature regulation;
+`overtemperature` and `sensor_fault` retain their separate meanings. Changing
+speed at a completed closed endpoint does not initiate another overrun.
 
 ## Remote boiler state through Home Assistant
 
@@ -203,7 +255,7 @@ and [Home Assistant time-pattern triggers](https://www.home-assistant.io/docs/au
   power loss. Pulse sequences and remote availability are not restored.
 
 Status values: `off`, `initializing`, `sensor_fault`, `overtemperature`,
-`waiting_for_heat`, `idle`, `opening`, `closing`. During protection or a sensor
+`waiting_for_heat`, `idle`, `opening`, `closing`, `fast_closing`. During protection or a sensor
 fault, `COOLING` denotes a closing demand even after the valve reaches 0%.
 
 ## Migrating an existing thermostat

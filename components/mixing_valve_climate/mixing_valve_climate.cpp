@@ -9,7 +9,7 @@ namespace esphome::mixing_valve_climate {
 using namespace climate;
 static const char *const TAG = "mixing_valve_climate";
 static const char *const STATUS_NAMES[] = {"off", "initializing", "sensor_fault", "overtemperature",
-                                        "waiting_for_heat", "idle", "opening", "closing"};
+                                        "waiting_for_heat", "idle", "opening", "closing", "fast_closing"};
 
 uint32_t MixingValveClimate::now_ms_() const { return millis(); }
 
@@ -24,6 +24,46 @@ ClimateTraits MixingValveClimate::traits() {
   return result;
 }
 
+void ParameterNumber::control(float value) { parent_->update_parameter(parameter_, value); }
+
+bool MixingValveClimate::valid_parameter_(Parameter parameter, float value) const {
+  if (!std::isfinite(value))
+    return false;
+  if (parameter == Parameter::DEADBAND) {
+    if (value <= 0 || max_target_temperature_ + value >= max_temperature_)
+      return false;
+    return deadband_number_ == nullptr ||
+           (value >= deadband_number_->traits.get_min_value() && value <= deadband_number_->traits.get_max_value());
+  }
+  return parameter == Parameter::FAST_CLOSE_OFFSET && value >= fast_close_hysteresis_ && value <= 20;
+}
+
+void MixingValveClimate::publish_parameters_() {
+  if (deadband_number_ != nullptr) deadband_number_->publish_state(deadband_);
+  if (fast_close_offset_number_ != nullptr) fast_close_offset_number_->publish_state(fast_close_offset_);
+}
+
+void MixingValveClimate::update_parameter(Parameter parameter, float value) {
+  if (!valid_parameter_(parameter, value)) {
+    ESP_LOGW(TAG, "Rejected invalid regulation parameter");
+    publish_parameters_();
+    return;
+  }
+  float &setting = parameter == Parameter::DEADBAND ? deadband_ : fast_close_offset_;
+  if (setting != value) {
+    setting = value;
+    fast_closing_ = false;  // Evaluate changed thresholds as a new decision.
+    if (ready_) {
+      if (restore_state_enabled_) {
+        Settings settings{deadband_, fast_close_offset_};
+        settings_pref_.save(&settings);
+      }
+      evaluate_();
+    }
+  }
+  publish_parameters_();
+}
+
 void MixingValveClimate::setup() {
   mode = default_mode_;
   target_temperature = default_target_temperature_;
@@ -35,6 +75,14 @@ void MixingValveClimate::setup() {
     if (std::isfinite(restored->target_temperature))
       target_temperature = clamp(restored->target_temperature, min_target_temperature_, max_target_temperature_);
   }
+  // Separate versioned preferences: do not reinterpret climate mode/setpoint storage.
+  settings_pref_ = make_entity_preference<Settings>(0x4D564301UL);
+  Settings settings{};
+  if (restore_state_enabled_ && settings_pref_.load(&settings)) {
+    if (valid_parameter_(Parameter::DEADBAND, settings.deadband)) deadband_ = settings.deadband;
+    if (valid_parameter_(Parameter::FAST_CLOSE_OFFSET, settings.fast_close_offset)) fast_close_offset_ = settings.fast_close_offset;
+  }
+  publish_parameters_();
   sensor_->add_on_state_callback([this](float value) { accept_temperature_(value); });
   if (sensor_->has_state()) {
     current_temperature = sensor_->state;
@@ -74,8 +122,11 @@ HeatSource MixingValveClimate::get_heat_source() const {
 void MixingValveClimate::control(const ClimateCall &call) {
   if (call.get_mode().has_value())
     mode = *call.get_mode();
-  if (call.get_target_temperature().has_value() && std::isfinite(*call.get_target_temperature()))
-    target_temperature = clamp(*call.get_target_temperature(), min_target_temperature_, max_target_temperature_);
+  if (call.get_target_temperature().has_value() && std::isfinite(*call.get_target_temperature())) {
+    float target = clamp(*call.get_target_temperature(), min_target_temperature_, max_target_temperature_);
+    if (target != target_temperature) fast_closing_ = false;
+    target_temperature = target;
+  }
   if (ready_) {
     // An explicit OFF also stops a manual move, except startup homing and protection.
     if (call.get_mode() == CLIMATE_MODE_OFF && !valve_->is_initializing() && !overtemperature_) {
@@ -107,6 +158,8 @@ void MixingValveClimate::loop() {
 void MixingValveClimate::command_(Command command) {
   // Issue transitions once. Never re-trigger a completed endpoint overrun.
   bool changed = command != command_state_;
+  const bool same_closing = (command == Command::CLOSE || command == Command::CLOSE_CONTINUOUS) &&
+                           (command_state_ == Command::CLOSE || command_state_ == Command::CLOSE_CONTINUOUS);
   command_state_ = command;
   if (command == Command::STOP) {
     if (changed || valve_->current_operation != valve::VALVE_OPERATION_IDLE)
@@ -118,6 +171,8 @@ void MixingValveClimate::command_(Command command) {
   const auto movement = command == Command::CLOSE_CONTINUOUS ? time_based_valve::Movement::CONTINUOUS :
                                                              time_based_valve::Movement::PULSED;
   const bool at_endpoint = opening ? valve_->position >= 1.0f : valve_->position <= 0.0f;
+  if (same_closing && at_endpoint && valve_->current_operation == valve::VALVE_OPERATION_IDLE)
+    return;  // A speed change must not repeat a completed closing overrun.
   const bool wrong_motion = valve_->current_operation != direction || valve_->get_movement() != movement;
   if (changed || (wrong_motion && (!at_endpoint || valve_->current_operation != valve::VALVE_OPERATION_IDLE)))
     valve_->control_position(opening ? 1.0f : 0.0f, movement);
@@ -148,6 +203,7 @@ void MixingValveClimate::evaluate_() {
   }
   // Protection has priority over OFF, source availability and startup homing.
   if (overtemperature_) {
+    fast_closing_ = false;
     if (valve_->is_initializing()) {
       if (valve_->current_operation == valve::VALVE_OPERATION_CLOSING) {
         command_state_ = Command::CLOSE_CONTINUOUS;
@@ -164,11 +220,13 @@ void MixingValveClimate::evaluate_() {
     return;
   }
   if (valve_->is_initializing()) {
+    fast_closing_ = false;
     command_state_ = Command::NONE;
     report_(Status::INITIALIZING, mode == CLIMATE_MODE_OFF ? CLIMATE_ACTION_OFF : CLIMATE_ACTION_IDLE);
     return;
   }
   if (mode == CLIMATE_MODE_OFF) {
+    fast_closing_ = false;
     // OFF relinquishes ownership after stopping once, allowing manual testing.
     if (command_state_ != Command::STOP)
       command_(Command::STOP);
@@ -176,13 +234,21 @@ void MixingValveClimate::evaluate_() {
     return;
   }
   if (!fresh || !std::isfinite(target_temperature)) {
+    fast_closing_ = false;
     command_(Command::CLOSE_CONTINUOUS);
     report_(Status::SENSOR_FAULT, CLIMATE_ACTION_COOLING);
     return;
   }
-  if (current_temperature > target_temperature + deadband_) {
-    command_(Command::CLOSE);
-    report_(Status::CLOSING, CLIMATE_ACTION_COOLING);
+  const float upper = target_temperature + deadband_;
+  const float fast_threshold = upper + fast_close_offset_;
+  if (fast_closing_) {
+    if (current_temperature <= fast_threshold - fast_close_hysteresis_) fast_closing_ = false;
+  } else if (current_temperature > fast_threshold) {
+    fast_closing_ = true;
+  }
+  if (current_temperature > upper) {
+    command_(fast_closing_ ? Command::CLOSE_CONTINUOUS : Command::CLOSE);
+    report_(fast_closing_ ? Status::FAST_CLOSING : Status::CLOSING, CLIMATE_ACTION_COOLING);
   } else if (current_temperature < target_temperature - deadband_) {
     if (heat_source_required_ && get_heat_source() != HeatSource::AVAILABLE) {
       command_(Command::STOP);
@@ -202,6 +268,7 @@ void MixingValveClimate::dump_config() {
   LOG_SENSOR("  ", "Mixed water temperature", sensor_);
   ESP_LOGCONFIG(TAG, "  Deadband: +/- %.2f C; maximum: %.2f C; reset difference: %.2f C", deadband_,
                 max_temperature_, overtemperature_hysteresis_);
+  ESP_LOGCONFIG(TAG, "  Fast closing offset: %.2f C; hysteresis: %.2f C", fast_close_offset_, fast_close_hysteresis_);
   ESP_LOGCONFIG(TAG, "  Sensor timeout: %u ms; heat source required: %s; heartbeat timeout: %u ms",
                 (unsigned) sensor_timeout_, YESNO(heat_source_required_), (unsigned) heat_source_timeout_);
 }

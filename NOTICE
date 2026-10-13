@@ -27,3 +27,6 @@ sensor and automation APIs, using this repository's time_based_valve component.
 C++ code is GPL-3.0-only; Python, documentation and examples are MIT.
 Single-setpoint pulsed regulation, local temperature fault/overtemperature
 closing, remote heat availability heartbeat, and deterministic integration tests.
+
+Added fast closing above a configurable excess temperature with 1 C default
+hysteresis, runtime HA number controls, validated persistent settings, and tests.

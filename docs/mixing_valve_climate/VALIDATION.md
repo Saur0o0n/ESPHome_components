@@ -7,7 +7,7 @@ container. No firmware was flashed and no live Home Assistant actions were sent.
 
 | Check | Result |
 |---|---|
-| Full ESPHome configuration loader, 6 schema test methods with subcases | PASS |
+| Full ESPHome configuration loader, 7 schema test methods with subcases | PASS |
 | Native host compilation and deterministic climate/valve integration tests | PASS |
 | Generated `climate.control` and static/templated heat-source actions | PASS |
 | HA heartbeat Jinja template, 16 connectivity/heating-state combinations | PASS |
@@ -57,6 +57,19 @@ outputs. They verify:
 Schema checks cover references/types, required fields, finite/ordered temperature
 limits, timeout bounds, supported modes, actions, duplicate valve ownership, and
 rejection of the valve's external-button `manual_control` mode.
+
+## Fast-closing and runtime-setting checks
+
+Additional deterministic tests verify the 29°C target / +/-2°C tolerance /
+5°C offset example: strict entry above 36°C, latching through 35–36°C and exit
+at 35°C with 1°C hysteresis. They also exercise pause-to-continuous switching,
+continuous-to-pulsed switching, cancellation in the idle band, pulsed-only opening,
+OFF reset, immediate changes from HA number commands, rejection of invalid values,
+independent controller settings, preference restoration and fallback after limits
+change. Completed endpoint overrun is not restarted by a speed change.
+
+The host configuration compiles and executes actual `number.set` actions. Both
+MCU examples include the new number entities and API exposure.
 
 ## Limits of validation
 

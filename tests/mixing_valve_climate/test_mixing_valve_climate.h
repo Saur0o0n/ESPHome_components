@@ -187,6 +187,99 @@ inline void run() {
     check(c.mode == CLIMATE_MODE_OFF && near(c.target_temperature,37), "mode and single setpoint survive restart");
     check(c.get_heat_source() == HeatSource::UNKNOWN, "source availability is never restored");
   }
+  {
+    Fixture f(30); f.c.make_call().set_target_temperature(29).perform();
+    f.sample(36);
+    check(f.c.get_status() == Status::CLOSING && f.v.get_movement() == time_based_valve::Movement::PULSED,
+          "exact fast threshold remains pulsed before activation");
+    f.advance(2000); check(f.v.is_paused(), "prepare slow closing pause");
+    f.sample(38);
+    check(f.c.get_status() == Status::FAST_CLOSING && f.v.close_output && !f.v.is_paused() &&
+          f.v.get_movement() == time_based_valve::Movement::CONTINUOUS, "38 C at target 29 overrides pause continuously");
+    for (float t : {36.0f, 35.1f, 36.1f, 35.5f}) {
+      f.sample(t);
+      check(f.c.get_status() == Status::FAST_CLOSING, "one degree hysteresis prevents chatter");
+    }
+    f.sample(35);
+    check(f.c.get_status() == Status::CLOSING && f.v.get_movement() == time_based_valve::Movement::PULSED,
+          "35 C returns to pulsed closing");
+    f.sample(36); check(f.c.get_status() == Status::CLOSING, "35 to 36 does not reenter fast mode");
+    f.sample(36.1f); check(f.c.get_status() == Status::FAST_CLOSING, "strictly above 36 reenters fast mode");
+    f.sample(31); f.advance(10000);
+    check(f.c.get_status() == Status::IDLE && !f.v.close_output, "entering idle band cancels fast closing");
+    f.sample(20);
+    check(f.v.get_movement() == time_based_valve::Movement::PULSED && f.v.open_output, "large cold error never speeds up opening");
+  }
+  {
+    Fixture f(38); f.c.make_call().set_target_temperature(29).perform();
+    f.sample(35.5f); check(f.c.get_status() == Status::FAST_CLOSING, "prepare latched fast mode");
+    f.c.make_call().set_target_temperature(29).perform();
+    check(f.c.get_status() == Status::FAST_CLOSING, "repeated same target preserves hysteresis");
+    f.c.update_parameter(Parameter::FAST_CLOSE_OFFSET, 5);
+    check(f.c.get_status() == Status::FAST_CLOSING, "repeated same parameter preserves hysteresis");
+    f.c.update_parameter(Parameter::FAST_CLOSE_OFFSET, 6);
+    check(f.c.get_status() == Status::CLOSING, "changed offset applies immediately");
+    f.c.update_parameter(Parameter::FAST_CLOSE_OFFSET, 3);
+    check(f.c.get_status() == Status::FAST_CLOSING, "lower offset immediately enables continuous closing");
+    f.c.make_call().set_target_temperature(34).perform();
+    check(f.c.get_status() == Status::IDLE, "changed target stops fast motion immediately");
+    f.c.update_parameter(Parameter::DEADBAND, 1);
+    check(f.c.get_status() == Status::CLOSING, "smaller tolerance re-evaluates idle immediately");
+    f.c.update_parameter(Parameter::DEADBAND, 2);
+    check(f.c.get_status() == Status::IDLE, "larger tolerance stops closing immediately");
+    for (float invalid : {NAN, std::numeric_limits<float>::infinity(), -1.0f, 4.0f}) {
+      f.c.update_parameter(Parameter::DEADBAND, invalid);
+      check(f.c.get_deadband() == 2, "invalid deadband is rejected");
+    }
+    f.c.update_parameter(Parameter::FAST_CLOSE_OFFSET, 0.5f);
+    f.c.update_parameter(Parameter::FAST_CLOSE_OFFSET, 21);
+    check(f.c.get_fast_close_offset() == 3, "invalid fast close offsets are rejected");
+    f.sample(50); f.c.update_parameter(Parameter::FAST_CLOSE_OFFSET, 20);
+    check(f.c.get_status() == Status::OVERTEMPERATURE && f.v.get_movement() == time_based_valve::Movement::CONTINUOUS,
+          "runtime threshold cannot suppress independent protection");
+  }
+  {
+    Fixture f(30); f.v.set_end_positions_overrun(0.05f); f.sample(38);
+    for (int i=0; i<659; ++i) f.advance(100);
+    check(f.v.close_output, "fast closing retains endpoint overrun until its deadline");
+    f.advance(100);
+    check(f.v.current_operation == valve::VALVE_OPERATION_IDLE, "fast closing completes full overrun");
+    int closes=f.v.closes;
+    f.sample(35); f.advance(1000); f.sample(38); f.advance(1000);
+    check(f.v.closes == closes, "speed changes at closed endpoint do not restart overrun");
+    f.c.make_call().set_mode(CLIMATE_MODE_OFF).perform();
+    f.sample(36.5f); f.c.make_call().set_mode(CLIMATE_MODE_AUTO).perform();
+    check(f.c.get_status() == Status::CLOSING, "OFF clears fast closing latch");
+  }
+  {
+    constexpr uint32_t key = 0xFAC802;
+    {
+      Fixture f(30, false, key); f.c.set_restore_state(true);
+      f.c.update_parameter(Parameter::DEADBAND, 1.5f);
+      f.c.update_parameter(Parameter::FAST_CLOSE_OFFSET, 4);
+    }
+    global_preferences->sync();
+    TestValve v; sensor::Sensor s; s.publish_state(30); TestClimate c(&v);
+    ParameterNumber band(&c, Parameter::DEADBAND), offset(&c, Parameter::FAST_CLOSE_OFFSET);
+    band.traits.set_min_value(0.1f); band.traits.set_max_value(3.9f); band.traits.set_step(0.1f);
+    offset.traits.set_min_value(1); offset.traits.set_max_value(20); offset.traits.set_step(0.1f);
+    c.identify(key); c.set_sensor(&s); c.set_valve(&v); c.set_deadband_number(&band); c.set_fast_close_offset_number(&offset);
+    c.setup();
+    check(near(c.get_deadband(),1.5f) && offset.state == 4 && near(band.state,1.5f), "restored settings published to number entities");
+    band.make_call().set_value(2.5f).perform();
+    check(c.get_deadband() == 2.5f && band.state == 2.5f, "number control changes actual regulator setting");
+    Fixture other;
+    check(other.c.get_deadband() == 2 && other.c.get_fast_close_offset() == 5, "other controller retains independent defaults");
+    global_preferences->sync();
+    TestValve v2; TestClimate no_restore(&v2); no_restore.identify(key); no_restore.set_sensor(&s); no_restore.set_valve(&v2);
+    no_restore.set_restore_state(false); no_restore.setup();
+    check(no_restore.get_deadband() == 2 && no_restore.get_fast_close_offset() == 5, "restore_state false uses YAML defaults");
+    TestValve v3; TestClimate changed_limits(&v3); changed_limits.identify(key); changed_limits.set_sensor(&s); changed_limits.set_valve(&v3);
+    changed_limits.set_max_target_temperature(48); changed_limits.set_deadband(1); changed_limits.set_fast_close_hysteresis(5);
+    changed_limits.setup();
+    check(changed_limits.get_deadband() == 1 && changed_limits.get_fast_close_offset() == 5,
+          "restored values invalid under new configuration fall back to defaults");
+  }
   puts("PASS: mixing climate behavioral tests");
 }
 }  // namespace mixing_tests

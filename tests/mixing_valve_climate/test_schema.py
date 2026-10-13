@@ -47,6 +47,21 @@ class SchemaTests(unittest.TestCase):
                        "sensor_timeout": "45s", "heat_source_timeout": "120s", "deadband": "1°C",
                        "status": {"name": "Regulation status"}})
 
+    def test_fast_closing_and_numbers(self):
+        self.validate({"fast_close_offset": 5, "fast_close_hysteresis": 1,
+                       "deadband_number": {"name": "Tolerance"},
+                       "fast_close_offset_number": {"name": "Fast close offset"}})
+        self.validate({"deadband": 3.9, "deadband_number": {"name": "Tolerance"}})
+        for updates, error in [
+            ({"fast_close_offset": 0}, "positive"),
+            ({"fast_close_hysteresis": 0}, "positive"),
+            ({"fast_close_offset": 0.5}, "fast_close_offset"),
+            ({"fast_close_offset": 21}, "fast_close_offset"),
+            ({"fast_close_hysteresis": 6}, "fast_close_offset"),
+            ({"deadband": 3.99, "deadband_number": {"name": "Tolerance"}}, "deadband_number"),
+        ]:
+            self.validate(updates, error=error)
+
     def test_missing_references(self):
         for key in ("sensor", "valve_id"):
             self.validate(missing=key, error=key)

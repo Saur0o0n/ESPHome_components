@@ -46,6 +46,12 @@ climate:
     valve_id: mixing_valve
     default_target_temperature: 30°C
     deadband: 2°C
+    fast_close_offset: 5°C
+    fast_close_hysteresis: 1°C
+    deadband_number:
+      name: Mixed water temperature tolerance
+    fast_close_offset_number:
+      name: Mixed water fast closing offset
     min_target_temperature: 18°C
     max_target_temperature: 46°C
     max_temperature: 50°C

@@ -7,6 +7,17 @@ esphome:
     priority: -100
     then:
       - lambda: run_mixing_climate_tests();
+      - number.set:
+          id: test_deadband
+          value: 1.5
+      - number.set:
+          id: test_fast_offset
+          value: 4
+      - lambda: |-
+          valve_tests::check(id(controller).get_deadband() == 1.5f && id(test_deadband).state == 1.5f,
+                             "generated number control updates deadband");
+          valve_tests::check(id(controller).get_fast_close_offset() == 4 && id(test_fast_offset).state == 4,
+                             "generated number control updates fast close threshold");
       - mixing_valve_climate.set_heat_source:
           id: controller
           state: available
@@ -62,5 +73,11 @@ climate:
     sensor: water
     valve_id: test_valve
     heat_source_required: true
+    deadband_number:
+      id: test_deadband
+      name: Tolerance
+    fast_close_offset_number:
+      id: test_fast_offset
+      name: Fast closing offset
     status:
       name: Controller status

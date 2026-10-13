@@ -3,16 +3,18 @@
 import math
 from esphome import automation
 import esphome.codegen as cg
-from esphome.components import climate, sensor, text_sensor
+from esphome.components import climate, sensor, text_sensor, number
 from esphome.components.time_based_valve.valve import TimeBasedValve, travel_duration
 import esphome.config_validation as cv
 import esphome.final_validate as fv
-from esphome.const import CONF_ID, CONF_SENSOR, CONF_STATE
+from esphome.const import CONF_ID, CONF_SENSOR, CONF_STATE, UNIT_CELSIUS, ENTITY_CATEGORY_CONFIG
 from . import mixing_valve_climate_ns as ns
 
 DEPENDENCIES = ["valve"]
-AUTO_LOAD = ["sensor", "text_sensor"]
+AUTO_LOAD = ["sensor", "text_sensor", "number"]
 MixingValveClimate = ns.class_("MixingValveClimate", climate.Climate, cg.Component)
+ParameterNumber = ns.class_("ParameterNumber", number.Number)
+Parameter = ns.enum("Parameter", is_class=True)
 HeatSourceAction = ns.class_("HeatSourceAction", automation.Action)
 
 
@@ -30,6 +32,11 @@ def positive_temperature(value):
     return value
 
 
+def deadband_max(config):
+    # Leave at least one UI step below the independent protection threshold.
+    return (math.ceil(round((config["max_temperature"] - config["max_target_temperature"]) * 10, 6)) - 1) / 10
+
+
 def validate_limits(config):
     low, high = config["min_target_temperature"], config["max_target_temperature"]
     if low >= high:
@@ -40,6 +47,10 @@ def validate_limits(config):
         raise cv.Invalid("max_target_temperature + deadband must be below max_temperature")
     if config["overtemperature_hysteresis"] >= config["max_temperature"] - high:
         raise cv.Invalid("overtemperature_hysteresis must leave room above max_target_temperature")
+    if not config["fast_close_hysteresis"] <= config["fast_close_offset"] <= 20:
+        raise cv.Invalid("fast_close_offset must be between fast_close_hysteresis and 20 C")
+    if "deadband_number" in config and not 0.1 <= config["deadband"] <= deadband_max(config):
+        raise cv.Invalid("deadband must fit the deadband_number range below max_temperature")
     return config
 
 
@@ -51,6 +62,12 @@ CONFIG_SCHEMA = cv.All(
         cv.Optional("min_target_temperature", default=18): temperature,
         cv.Optional("max_target_temperature", default=46): temperature,
         cv.Optional("deadband", default=2): positive_temperature,
+        cv.Optional("fast_close_offset", default=5): positive_temperature,
+        cv.Optional("fast_close_hysteresis", default=1): positive_temperature,
+        cv.Optional("deadband_number"): number.number_schema(
+            ParameterNumber, unit_of_measurement=UNIT_CELSIUS, entity_category=ENTITY_CATEGORY_CONFIG),
+        cv.Optional("fast_close_offset_number"): number.number_schema(
+            ParameterNumber, unit_of_measurement=UNIT_CELSIUS, entity_category=ENTITY_CATEGORY_CONFIG),
         cv.Optional("max_temperature", default=50): temperature,
         cv.Optional("overtemperature_hysteresis", default=2): positive_temperature,
         cv.Optional("sensor_timeout", default="30s"): travel_duration,
@@ -88,9 +105,16 @@ async def to_code(config):
     cg.add(var.set_sensor(await cg.get_variable(config[CONF_SENSOR])))
     cg.add(var.set_valve(await cg.get_variable(config["valve_id"])))
     for key in ("default_target_temperature", "min_target_temperature", "max_target_temperature",
-                "deadband", "max_temperature", "overtemperature_hysteresis", "sensor_timeout",
+                "deadband", "fast_close_offset", "fast_close_hysteresis", "max_temperature", "overtemperature_hysteresis", "sensor_timeout",
                 "heat_source_required", "heat_source_timeout", "default_mode", "restore_state"):
         cg.add(getattr(var, "set_" + key)(config[key]))
+    for key, parameter, low, high in (
+        ("deadband_number", Parameter.DEADBAND, 0.1, deadband_max(config)),
+        ("fast_close_offset_number", Parameter.FAST_CLOSE_OFFSET, config["fast_close_hysteresis"], 20),
+    ):
+        if key in config:
+            entity = await number.new_number(config[key], var, parameter, min_value=low, max_value=high, step=0.1)
+            cg.add(getattr(var, "set_" + key)(entity))
     if "status" in config:
         cg.add(var.set_status_sensor(await text_sensor.new_text_sensor(config["status"])))
 

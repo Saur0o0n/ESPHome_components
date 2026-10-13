@@ -8,7 +8,7 @@ This repository contains independent components that can be selected through
 
 | Component | Platform | Description | Documentation |
 |---|---|---|---|
-| `mixing_valve_climate` | `climate` | Single-setpoint mixed-water regulation with pulsed valve movement and heat-source availability | [Guide](docs/mixing_valve_climate/README.md) |
+| `mixing_valve_climate` | `climate` | Single-setpoint mixed-water regulation, fast closing, runtime temperature settings and heat-source availability | [Guide](docs/mixing_valve_climate/README.md) |
 | `time_based_valve` | `valve` | Time-based valve positioning, startup positioning, pulsed movement and extra travel time at the endpoints | [Guide](docs/time_based_valve/README.md) |
 
 ## Installation
