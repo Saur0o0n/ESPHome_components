@@ -1,0 +1,70 @@
+# Package shared by both MCU compilation examples.
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [time_based_valve, mixing_valve_climate]
+
+# Demonstration input only. Replace with the real sensor downstream of the mixer.
+sensor:
+  - platform: template
+    id: mixed_water_temperature
+    name: Mixed water temperature
+    unit_of_measurement: °C
+    device_class: temperature
+    lambda: return 30.0f;
+    update_interval: 2s
+
+valve:
+  - platform: time_based_valve
+    id: mixing_valve
+    name: Mixing valve
+    device_class: water
+    open_duration: 120s
+    close_duration: 120s
+    start_position: closed
+    end_positions_overrun: 5%
+    open_pulse_duration: 2s
+    open_pause_duration: 8s
+    close_pulse_duration: 2s
+    close_pause_duration: 4s
+    open_action:
+      - switch.turn_off: valve_close
+      - switch.turn_on: valve_open
+    close_action:
+      - switch.turn_off: valve_open
+      - switch.turn_on: valve_close
+    stop_action:
+      - switch.turn_off: valve_open
+      - switch.turn_off: valve_close
+
+climate:
+  - platform: mixing_valve_climate
+    id: water_controller
+    name: Mixed water controller
+    sensor: mixed_water_temperature
+    valve_id: mixing_valve
+    default_target_temperature: 30°C
+    deadband: 2°C
+    min_target_temperature: 18°C
+    max_target_temperature: 46°C
+    max_temperature: 50°C
+    overtemperature_hysteresis: 2°C
+    sensor_timeout: 30s
+    default_mode: 'OFF'
+    restore_state: true
+    heat_source_required: true
+    heat_source_timeout: 90s
+    status:
+      name: Mixed water controller status
+
+api:
+  actions:
+    # Called periodically by HA, not only when the boiler state changes.
+    - action: heat_source_heartbeat
+      variables:
+        state: string
+      then:
+        - mixing_valve_climate.set_heat_source:
+            id: water_controller
+            state: !lambda return state;

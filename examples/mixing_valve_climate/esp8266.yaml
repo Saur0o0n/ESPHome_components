@@ -1,0 +1,22 @@
+# Compilation example only; adapt the GPIOs and replace the demonstration sensor.
+esphome:
+  name: mixing-controller-8266
+esp8266:
+  board: nodemcuv2
+logger:
+wifi:
+  ssid: EXAMPLE_ONLY
+  password: example-password
+packages:
+  controller: !include controller.yaml
+switch:
+  - platform: gpio
+    id: valve_open
+    pin: GPIO5
+    restore_mode: ALWAYS_OFF
+    interlock: [valve_close]
+  - platform: gpio
+    id: valve_close
+    pin: GPIO4
+    restore_mode: ALWAYS_OFF
+    interlock: [valve_open]

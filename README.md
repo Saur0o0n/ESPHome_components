@@ -8,6 +8,7 @@ This repository contains independent components that can be selected through
 
 | Component | Platform | Description | Documentation |
 |---|---|---|---|
+| `mixing_valve_climate` | `climate` | Single-setpoint mixed-water regulation with pulsed valve movement and heat-source availability | [Guide](docs/mixing_valve_climate/README.md) |
 | `time_based_valve` | `valve` | Time-based valve positioning, startup positioning, pulsed movement and extra travel time at the endpoints | [Guide](docs/time_based_valve/README.md) |
 
 ## Installation
@@ -19,6 +20,10 @@ external_components:
   - source: github://Saur0o0n/ESPHome_components@main
     components: [time_based_valve]
 ```
+
+For automatic mixing-temperature control, select
+`components: [time_based_valve, mixing_valve_climate]` and follow the
+[climate guide](docs/mixing_valve_climate/README.md).
 
 Then configure the selected component using its documentation.
 The basic valve configuration is:
@@ -94,6 +99,8 @@ In a Python environment with ESPHome 2026.8.2 installed:
 python tests/run.py
 esphome compile examples/time_based_valve/esp8266.yaml
 esphome compile examples/time_based_valve/esp32.yaml
+esphome compile examples/mixing_valve_climate/esp8266.yaml
+esphome compile examples/mixing_valve_climate/esp32.yaml
 ```
 
 To run a single suite, use `python tests/run.py time_based_valve`.
@@ -107,3 +114,8 @@ operate hardware or flash firmware. See the valve's
 It retains ESPHome's licensing split: **GPLv3 for C++**, **MIT for Python
 and other files**. [LICENSE](LICENSE) contains the upstream license text;
 [NOTICE](NOTICE) describes the source and modifications.
+
+`mixing_valve_climate` is an original controller by Sauron using the ESPHome
+climate, sensor and valve APIs, with the same GPLv3 C++ / MIT Python licensing
+split. Its [validation report](docs/mixing_valve_climate/VALIDATION.md) lists
+software checks separately from physical installation tests.

@@ -18,3 +18,12 @@ with full startup travel excluding overrun and bounded repeated endpoint command
 Added per-command continuous/pulsed positioning, separate opening/closing pulse
 and pause durations, powered-time position accounting, uninterrupted endpoint
 overrun, and deterministic pulse/command-interruption tests.
+
+
+mixing_valve_climate — external ESPHome component
+Copyright (c) 2026 Sauron.
+Original mixed-water controller implemented against ESPHome 2026.8.2 climate,
+sensor and automation APIs, using this repository's time_based_valve component.
+C++ code is GPL-3.0-only; Python, documentation and examples are MIT.
+Single-setpoint pulsed regulation, local temperature fault/overtemperature
+closing, remote heat availability heartbeat, and deterministic integration tests.

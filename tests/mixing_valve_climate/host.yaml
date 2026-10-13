@@ -1,0 +1,66 @@
+esphome:
+  name: mixing-climate-test
+  includes:
+    - ../time_based_valve/test_time_based_valve.h
+    - test_mixing_valve_climate.h
+  on_boot:
+    priority: -100
+    then:
+      - lambda: run_mixing_climate_tests();
+      - mixing_valve_climate.set_heat_source:
+          id: controller
+          state: available
+      - climate.control:
+          id: controller
+          mode: AUTO
+          target_temperature: 32
+      - lambda: |-
+          valve_tests::check(id(controller).target_temperature == 32, "generated climate action");
+          valve_tests::check(id(controller).get_heat_source() == mixing_valve_climate::HeatSource::AVAILABLE,
+                             "generated heartbeat action");
+      - mixing_valve_climate.set_heat_source:
+          id: controller
+          state: !lambda return std::string("unknown");
+      - climate.control:
+          id: controller
+          mode: 'OFF'
+      - lambda: |-
+          valve_tests::check(id(controller).get_heat_source() == mixing_valve_climate::HeatSource::UNKNOWN,
+                             "templated heartbeat action");
+          puts("PASS: generated mixing climate actions");
+          fflush(stdout);
+          exit(0);
+host:
+logger:
+  level: ERROR
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [time_based_valve, mixing_valve_climate]
+valve:
+  - platform: time_based_valve
+    id: test_valve
+    name: Test Valve
+    open_duration: 120s
+    close_duration: 120s
+    open_action:
+      - lambda: return;
+    close_action:
+      - lambda: return;
+    stop_action:
+      - lambda: return;
+sensor:
+  - platform: template
+    id: water
+    lambda: return 30.0f;
+    update_interval: 2s
+climate:
+  - platform: mixing_valve_climate
+    id: controller
+    name: Test Climate
+    sensor: water
+    valve_id: test_valve
+    heat_source_required: true
+    status:
+      name: Controller status

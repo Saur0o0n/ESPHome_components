@@ -1,0 +1,25 @@
+# Home Assistant automation, NOT ESPHome YAML.
+# Replace both entity IDs and the ESPHome action name with your installation.
+# Source must indicate actual heat availability for the floor circuit, not
+# merely that central-heating mode is enabled. Unknown/unavailable is explicit.
+alias: Mixing valve heat source heartbeat
+triggers:
+  - trigger: time_pattern
+    seconds: /30
+  - trigger: state
+    entity_id:
+      - binary_sensor.boiler_floor_heating_active
+      - binary_sensor.boiler_connection
+  - trigger: homeassistant
+    event: start
+conditions: []
+actions:
+  - action: esphome.mixing_controller_32_heat_source_heartbeat
+    data:
+      state: >-
+        {{ 'available' if is_state('binary_sensor.boiler_connection', 'on')
+           and is_state('binary_sensor.boiler_floor_heating_active', 'on')
+           else ('unavailable' if is_state('binary_sensor.boiler_connection', 'on')
+           and is_state('binary_sensor.boiler_floor_heating_active', 'off')
+           else 'unknown') }}
+mode: restart
