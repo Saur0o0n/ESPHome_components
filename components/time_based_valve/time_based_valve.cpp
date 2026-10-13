@@ -22,6 +22,7 @@ void TimeBasedValve::dump_config() {
   ESP_LOGCONFIG(TAG, "  Start Position: %s", this->startup_position_ == StartPosition::ASIS ? "asis" :
                 (this->startup_position_ == StartPosition::OPEN ? "open" : "closed"));
   ESP_LOGCONFIG(TAG, "  End Positions Overrun: %.1f%%", this->end_positions_overrun_ * 100.0f);
+  ESP_LOGCONFIG(TAG, "  Direction Change Wait: %u ms", this->direction_change_wait_time_);
   ESP_LOGCONFIG(TAG, "  Opening Pulse/Pause: %u/%u ms", this->open_pulse_duration_, this->open_pause_duration_);
   ESP_LOGCONFIG(TAG, "  Closing Pulse/Pause: %u/%u ms", this->close_pulse_duration_, this->close_pause_duration_);
 }
@@ -90,6 +91,14 @@ void TimeBasedValve::loop() {
   }
 
   const uint32_t now = this->now_ms_();
+  if (this->direction_change_waiting_) {
+    if (now - this->direction_change_started_ < this->direction_change_wait_time_)
+      return;
+    this->direction_change_waiting_ = false;
+    // Start a full pulse at actual action dispatch, even if the loop ran late.
+    this->phase_started_ = now;
+    this->set_drive_(this->current_operation);
+  }
   // Startup and endpoint overrun are continuous. Do not replay missed pulses:
   // a delayed loop accounts for actual powered time, then starts a fresh pause.
   if (this->movement_ == Movement::PULSED && !this->initializing_ && !this->is_overrunning_()) {
@@ -266,6 +275,10 @@ void TimeBasedValve::start_direction_(ValveOperation direction) {
   if (direction == this->current_operation && direction != VALVE_OPERATION_IDLE)
     return;
   this->recompute_position_();
+  // Use the energized direction, not the logical operation: pulse pauses are
+  // already stopped, while a built-in endstop may leave a direction energized.
+  const bool reversing = direction != VALVE_OPERATION_IDLE &&
+      this->drive_direction_ != VALVE_OPERATION_IDLE && direction != this->drive_direction_;
   this->current_operation = direction;
   this->start_position_ = this->position;
   this->powered_time_ = 0;
@@ -277,6 +290,18 @@ void TimeBasedValve::start_direction_(ValveOperation direction) {
     this->endpoint_run_ = false;
   } else {
     this->last_operation_ = direction;
+  }
+  if (direction == VALVE_OPERATION_IDLE) {
+    this->direction_change_waiting_ = false;
+  } else if (this->direction_change_waiting_) {
+    // A replacement target/mode uses the original deadline. A stop request
+    // cancels this pending transition and returns to ordinary idle.
+    return;
+  } else if (reversing && this->direction_change_wait_time_ != 0) {
+    this->direction_change_waiting_ = true;
+    this->direction_change_started_ = this->now_ms_();
+    this->set_drive_(VALVE_OPERATION_IDLE, true);
+    return;
   }
   this->set_drive_(direction, true);
 }

@@ -90,6 +90,7 @@ when using `packages`.
 | `manual_control` | Full travel on a 0% or 100% command, allowing for an actuator that may have been moved manually | `false` |
 | `has_built_in_endstop` | Skips `stop_action` at the endpoints, as in `cover.time_based` | `false` |
 | `start_position` | Startup behavior: `asis`, `closed` or `open` | `asis` |
+| `direction_change_wait_time` | Output-off interval before reversing an active direction; excluded from travel and pulse timing | `0ms` |
 | `end_positions_overrun` | Extra time at the endpoints, as a percentage of full travel time in the respective direction (0–100%) | `0%` |
 
 Position ranges from 0% to 100%. The standard `valve.open`, `valve.close`,
@@ -121,6 +122,48 @@ Having built-in limit switches does not require this option to be `true`.
 The examples leave it `false`, so the relays also turn off at the endpoints.
 This option preserves behavior inherited from `cover.time_based`; it does not
 require limit switches to be connected to the ESP. It has only been tested in software.
+
+### Direction change wait
+
+Set `direction_change_wait_time: 200ms` to stop the actuator before reversing
+an active direction. The default is `0ms` (legacy behavior); the accepted range
+is `0ms` to `2147483647ms`.
+
+```yaml
+valve:
+  - platform: time_based_valve
+    # Keep your existing name, durations and actuator actions.
+    direction_change_wait_time: 200ms
+```
+
+On an active reversal the component calls `stop_action`, waits without blocking
+ESPHome, then calls the new direction action. The estimate stays unchanged while
+waiting. Travel time, endpoint overrun and the first pulse are counted only after
+the new action starts: a 2 s pulse means 200 ms stopped followed by a full 2 s pulse.
+If the ESPHome loop runs late, the full pulse starts when the action actually runs.
+
+Starting from stopped outputs adds **no wait**, even after a very recent STOP or
+when choosing the opposite direction during a pulse pause. Resuming a pulse and
+changing the target in the same active direction also add no wait. This option is
+not a minimum off-time across separate STOP/start commands. With
+`has_built_in_endstop: true`, an output left energized at an endpoint still counts
+as an active direction for reversal, even though the logical operation is IDLE.
+
+STOP, toggle, or a target equal to the current intermediate position cancels a
+pending reversal. Repeated requests do not restart the wait. A replacement target
+or movement mode during the wait is applied at the original deadline. While
+waiting, `current_operation` indicates the requested direction;
+`is_waiting_for_direction_change()` is true and `is_paused()` is false (the latter
+only reports a pulse pause).
+
+Keep mutual GPIO `interlock` protection as an independent safeguard. For example,
+use `interlock_wait_time: 200ms` on both switches and the same wait on the valve.
+The valve manages its own stop/wait/start sequence; it does not rely on or read
+the GPIO interlock timer. Because `stop_action` has already turned both switches
+off, ordinary valve reversals do not trigger another GPIO interlock delay.
+`stop_action` must switch both outputs off immediately, and direction actions must
+switch their output on immediately. Additional automation delays or direct relay
+control remain outside the valve's timing model.
 
 ### Pulsed movement
 
@@ -174,7 +217,7 @@ full travel and the default opening profile takes 6 s of powered movement and
 |---|---|
 | Repeat the same pulsed target | Keep the current pulse/pause deadline; do not restart travel |
 | Change the target in the same direction | Update the target while keeping the pulse/pause phase |
-| Reverse direction | Cancel the previous phase and start a pulse in the new direction |
+| Reverse direction | Cancel the previous phase, apply the configured wait if an output is active, then start a full pulse in the new direction |
 | Change to continuous movement | Resume immediately if paused; preserve travel and overrun already completed |
 | Change to pulsed movement | Start a fresh pulse window; preserve the current position |
 | `valve.stop` or toggle while active, including a pause | Stop and cancel all pending movement |
@@ -261,7 +304,8 @@ the position remains only a provisional estimate.
 
 Opening and closing actions should start movement immediately. A `delay` or
 `interlock_wait_time` before energizing the actuator counts towards travel time.
-Separate startup/direction-change delay handling has not yet been implemented.
+Use `direction_change_wait_time` for component-managed reversal delays. Startup
+from stopped outputs remains immediate and always gets its full powered travel time.
 
 ## Setup and migration from cover
 
@@ -302,7 +346,7 @@ Protected methods and fields allow subclasses to extend it; `start_direction_()`
 is virtual. The virtual `now_ms_()` allows timing tests without a physical actuator.
 
 There is no dependency on `cover`. Future extensions could include a minimum
-effective movement pulse, a direction-change delay or periodic valve movement.
+effective movement pulse or periodic valve movement.
 These extensions are not part of the current version.
 
 ## Validation

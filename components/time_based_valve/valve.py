@@ -27,6 +27,7 @@ CONF_OPEN_PULSE_DURATION = "open_pulse_duration"
 CONF_OPEN_PAUSE_DURATION = "open_pause_duration"
 CONF_CLOSE_PULSE_DURATION = "close_pulse_duration"
 CONF_CLOSE_PAUSE_DURATION = "close_pause_duration"
+CONF_DIRECTION_CHANGE_WAIT_TIME = "direction_change_wait_time"
 CONF_MOVEMENT = "movement"
 Movement = time_based_valve_ns.enum("Movement", is_class=True)
 MOVEMENTS = {"continuous": Movement.CONTINUOUS, "pulsed": Movement.PULSED}
@@ -46,6 +47,13 @@ def travel_duration(value):
     return duration
 
 
+def direction_change_duration(value):
+    duration = cv.positive_time_period_milliseconds(value)
+    if not 0 <= duration.total_milliseconds <= 2147483647:
+        raise cv.Invalid("Direction change wait time must be between 0ms and 2147483647ms")
+    return duration
+
+
 CONFIG_SCHEMA = (
     valve.valve_schema(TimeBasedValve)
     .extend(
@@ -60,6 +68,7 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_ASSUMED_STATE, default=True): cv.boolean,
             cv.Optional(CONF_START_POSITION, default="asis"): cv.enum(START_POSITIONS, lower=True),
             cv.Optional(CONF_END_POSITIONS_OVERRUN, default="0%"): cv.percentage,
+            cv.Optional(CONF_DIRECTION_CHANGE_WAIT_TIME, default="0ms"): direction_change_duration,
             cv.Optional(CONF_OPEN_PULSE_DURATION, default="2s"): travel_duration,
             cv.Optional(CONF_OPEN_PAUSE_DURATION, default="8s"): travel_duration,
             cv.Optional(CONF_CLOSE_PULSE_DURATION, default="2s"): travel_duration,
@@ -80,6 +89,7 @@ async def to_code(config):
     cg.add(var.set_assumed_state(config[CONF_ASSUMED_STATE]))
     cg.add(var.set_start_position(config[CONF_START_POSITION]))
     cg.add(var.set_end_positions_overrun(config[CONF_END_POSITIONS_OVERRUN]))
+    cg.add(var.set_direction_change_wait_time(config[CONF_DIRECTION_CHANGE_WAIT_TIME]))
     cg.add(var.set_open_pulse_duration(config[CONF_OPEN_PULSE_DURATION]))
     cg.add(var.set_open_pause_duration(config[CONF_OPEN_PAUSE_DURATION]))
     cg.add(var.set_close_pulse_duration(config[CONF_CLOSE_PULSE_DURATION]))

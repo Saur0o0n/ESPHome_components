@@ -48,6 +48,12 @@ class SchemaTests(unittest.TestCase):
         else:
             self.assertEqual(result.returncode, 0, result.stdout)
 
+    def test_direction_change_wait(self):
+        for value in ("0ms", "200ms", "2147483647ms"):
+            self.validate({"direction_change_wait_time": value})
+        for value in ("-1ms", "2147483648ms"):
+            self.validate({"direction_change_wait_time": value}, expected_error="direction_change_wait_time")
+
     def test_pulse_timing(self):
         keys = ("open_pulse_duration", "open_pause_duration", "close_pulse_duration", "close_pause_duration")
         self.validate(dict(zip(keys, ["1s", "7s", "500ms", "3s"])))

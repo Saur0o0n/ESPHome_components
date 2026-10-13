@@ -85,3 +85,22 @@ action with a templated position using a trigger argument.
 
 Outputs in the host tests are simulated. Physical relay timing, interlock delays,
 actuator response and Home Assistant presentation require hardware validation.
+
+## Direction change wait — 2026-10-13
+
+ESPHome 2026.8.2: all 14 valve schema tests (including subcases), generated YAML
+actions and the real-runtime host suite pass. The climate schema, host behavioral
+suite and HA template tests also pass unchanged. New controlled-clock checks cover:
+
+- both reversal directions: outputs off and position unchanged for 200 ms,
+  followed by a full 2 s powered pulse;
+- no delay when starting from idle, immediately after explicit STOP, from a pulse
+  pause, on ordinary pulse resumption, or on a same-direction target change;
+- STOP/toggle cancellation with no delayed restart;
+- repeated targets, movement-mode changes and replacement directions during a wait;
+- late loops starting a complete pulse at actual action dispatch;
+- continuous partial targets and full endpoint travel/overrun excluding wait time;
+- timer wraparound, energized outputs at built-in endstops and immediate full startup travel.
+
+The existing zero-delay regression suite continues to exercise default behavior.
+Hardware switching delays and physical actuator movement have not been measured.

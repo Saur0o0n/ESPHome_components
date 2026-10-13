@@ -53,6 +53,7 @@ valve:
     name: Test Valve
     open_duration: 120s
     close_duration: 120s
+    direction_change_wait_time: 200ms
     open_action:
       - lambda: return;
     close_action:

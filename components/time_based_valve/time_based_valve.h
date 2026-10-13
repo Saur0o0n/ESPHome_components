@@ -36,6 +36,8 @@ class TimeBasedValve : public valve::Valve, public Component {
   void set_open_pause_duration(uint32_t value) { this->open_pause_duration_ = value; }
   void set_close_pulse_duration(uint32_t value) { this->close_pulse_duration_ = value; }
   void set_close_pause_duration(uint32_t value) { this->close_pause_duration_ = value; }
+  void set_direction_change_wait_time(uint32_t value) { this->direction_change_wait_time_ = value; }
+  bool is_waiting_for_direction_change() const { return this->direction_change_waiting_; }
   bool is_initializing() const { return this->initializing_; }
   bool is_paused() const { return this->paused_; }
   Movement get_movement() const { return this->movement_; }
@@ -81,6 +83,9 @@ class TimeBasedValve : public valve::Valve, public Component {
   Movement movement_{Movement::CONTINUOUS};
   bool paused_{false};
   uint32_t phase_started_{0};
+  uint32_t direction_change_wait_time_{0};
+  uint32_t direction_change_started_{0};
+  bool direction_change_waiting_{false};
   uint32_t open_pulse_duration_{2000};
   uint32_t open_pause_duration_{8000};
   uint32_t close_pulse_duration_{2000};

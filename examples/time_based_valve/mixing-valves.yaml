@@ -14,6 +14,7 @@ valve:
     assumed_state: false
     start_position: closed
     end_positions_overrun: 5%
+    direction_change_wait_time: 200ms
     open_duration: 120s
     close_duration: 120s
     open_action:
@@ -33,6 +34,7 @@ valve:
     assumed_state: false
     start_position: closed
     end_positions_overrun: 5%
+    direction_change_wait_time: 200ms
     open_duration: 120s
     close_duration: 120s
     open_action:

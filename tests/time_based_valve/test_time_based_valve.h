@@ -50,6 +50,112 @@ class TestValve : public time_based_valve::TimeBasedValve {
   uint32_t now_ms_() const override { return clock; }
 };
 
+inline void run_direction_wait() {
+  using time_based_valve::Movement;
+  for (bool opening : {false, true}) {
+    TestValve v(0.5f);
+    v.set_direction_change_wait_time(200);
+    v.target(opening ? 0 : 1); v.advance(1000);
+    const float before = v.position;
+    v.pulse(opening ? 1 : 0);
+    check(v.is_waiting_for_direction_change() && !v.open_output && !v.close_output,
+          "active reversal stops both outputs before waiting");
+    v.advance(199);
+    check(v.position == before && !v.open_output && !v.close_output,
+          "direction wait contributes no travel and does not start early");
+    v.advance(1);
+    check(!v.is_waiting_for_direction_change() && (opening ? v.open_output : v.close_output) &&
+          v.position == before, "opposite action starts at 200ms without phantom motion");
+    v.advance(1999);
+    check(!v.is_paused() && (opening ? v.open_output : v.close_output), "wait does not shorten pulse");
+    v.advance(1);
+    check(v.is_paused() && !v.open_output && !v.close_output &&
+          near(v.position, before + (opening ? 2.0f : -2.0f)/120), "full 2s pulse after wait");
+  }
+  for (bool toggle : {false, true}) {
+    TestValve v(0.5f); v.set_direction_change_wait_time(200);
+    v.target(1); v.advance(1000); v.pulse(0); v.advance(100);
+    const float before = v.position;
+    if (toggle) v.toggle(); else v.stop();
+    v.advance(10000);
+    check(!v.is_waiting_for_direction_change() && !v.open_output && !v.close_output &&
+          v.closes == 0 && v.position == before && v.current_operation == VALVE_OPERATION_IDLE,
+          "STOP and toggle cancel pending reversal without delayed restart");
+    v.target(0);
+    check(v.close_output && !v.is_waiting_for_direction_change(), "restart after STOP is immediate");
+  }
+  {
+    TestValve v(0.5f); v.set_direction_change_wait_time(200);
+    v.target(1); v.advance(1000); v.stop(); v.target(0);
+    check(v.close_output && !v.is_waiting_for_direction_change(), "explicit STOP then opposite starts immediately");
+    v.stop(); v.pulse(1); v.advance(2000); v.pulse(0);
+    check(v.close_output && !v.is_waiting_for_direction_change(), "opposite direction from pulse pause is immediate");
+    v.advance(2000); v.advance(4000);
+    check(v.close_output && !v.is_waiting_for_direction_change(), "ordinary pulse resumption has no wait");
+  }
+  {
+    TestValve v(0.5f); v.set_direction_change_wait_time(200);
+    v.target(1); v.advance(1000); v.target(0.75f);
+    check(v.open_output && !v.is_waiting_for_direction_change() && v.stops == 0,
+          "same-direction target changes have no wait");
+    v.pulse(0); v.advance(100); v.pulse(0); v.target(0.25f); v.pulse(0.25f);
+    v.advance(99); check(v.closes == 0, "repeated targets and modes cannot bypass wait");
+    v.advance(1); check(v.close_output && v.closes == 1, "repeated targets and modes do not extend wait");
+    v.advance(2000); check(v.is_paused(), "latest movement mode starts a full pulse");
+  }
+  {
+    TestValve v(0.5f); v.set_direction_change_wait_time(200);
+    v.target(1); v.advance(1000); v.target(0); v.advance(100); v.pulse(1);
+    v.advance(99); check(!v.open_output && !v.close_output, "replacement direction keeps pending deadline");
+    v.advance(1); check(v.open_output && v.closes == 0, "latest direction wins during wait");
+  }
+  {
+    TestValve v(0.5f); v.set_direction_change_wait_time(200);
+    v.target(1); v.advance(1000); v.pulse(0);
+    const float before = v.position;
+    v.advance(750);
+    check(v.close_output && v.position == before, "late loop starts action now without counting missed wait");
+    v.advance(1999); check(v.close_output, "late loop still grants full pulse");
+    v.advance(1); check(v.is_paused(), "late pulse ends after 2s of action time");
+  }
+  {
+    TestValve v(0.5f); v.set_direction_change_wait_time(200);
+    v.target(1); v.advance(1000); v.target(0.25f);
+    v.advance(200); v.advance(30999);
+    check(v.close_output, "continuous target excludes wait from travel");
+    v.advance(1); check(near(v.position, 0.25f) && !v.close_output, "continuous target stops after full travel");
+  }
+  {
+    TestValve v(0.5f); v.set_direction_change_wait_time(200); v.set_end_positions_overrun(0.05f);
+    v.target(1); v.advance(1000); v.target(0); v.advance(200); v.advance(66999);
+    check(v.close_output, "endpoint travel plus overrun excludes reversal wait");
+    v.advance(1); check(!v.close_output && v.position == 0, "endpoint full powered budget completes");
+  }
+  {
+    TestValve v(0.5f); v.set_direction_change_wait_time(200);
+    v.clock = std::numeric_limits<uint32_t>::max() - 99;
+    v.target(1); v.target(0); v.advance(199); check(!v.close_output, "wait spans millis wraparound");
+    v.advance(1); check(v.close_output, "wrapped wait expires correctly");
+  }
+  {
+    TestValve v; v.set_direction_change_wait_time(200); v.set_has_built_in_endstop(true);
+    v.target(1); v.advance(120000);
+    check(v.open_output && v.current_operation == VALVE_OPERATION_IDLE, "endstop leaves output active");
+    v.target(0);
+    check(v.is_waiting_for_direction_change() && !v.open_output && !v.close_output,
+          "energized endstop output requires break before opposite direction");
+    v.advance(200); check(v.close_output, "endstop reversal starts after wait");
+  }
+  {
+    TestValve v; v.identify(0xD1EC7101); v.set_direction_change_wait_time(200);
+    v.set_start_position(time_based_valve::StartPosition::CLOSED); v.setup();
+    check(v.close_output && !v.is_waiting_for_direction_change(), "startup from idle has no wait");
+    v.advance(119999); check(v.is_initializing(), "startup retains full powered duration");
+    v.advance(1); check(!v.is_initializing() && !v.close_output, "startup stops after full travel");
+  }
+  puts("PASS: direction change wait tests");
+}
+
 inline void run_pulsed() {
   using time_based_valve::Movement;
   using time_based_valve::StartPosition;
@@ -540,4 +646,4 @@ inline void run() {
 }
 }  // namespace valve_tests
 
-inline void run_time_based_valve_tests() { valve_tests::run(); valve_tests::run_pulsed(); }
+inline void run_time_based_valve_tests() { valve_tests::run(); valve_tests::run_pulsed(); valve_tests::run_direction_wait(); }
