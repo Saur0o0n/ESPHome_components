@@ -121,6 +121,8 @@ reports `IDLE`. `status` distinguishes waiting, startup, and protection states.
 | `default_mode` | `OFF` | `OFF` or `AUTO`, used when settings are not restored |
 | `restore_state` | `true` | Restore the saved mode and target after reboot |
 | `status` | Omitted | Optional text sensor for controller status |
+| `heat_source_status` | Omitted | Diagnostic text sensor: effective `available`, `unavailable` or `unknown` source state |
+| `heat_source_age` | Omitted | Diagnostic sensor: seconds since the last received source message; unknown until the first message |
 
 Timeouts accept 1 through 2147483647 milliseconds. Target limits must be ordered,
 and the default target must lie within them. `max_target_temperature + deadband`
@@ -244,7 +246,8 @@ last for hours and must not expire merely because it did not change.
 
 The example addresses `water_controller`. For two controllers, call
 `mixing_valve_climate.set_heat_source` for both IDs in the text sensor's `on_value`
-and in the disconnect branch; share the import and the request interval.
+and `mixing_valve_climate.invalidate_heat_source` for both IDs in the disconnect
+branch; share the import and the request interval.
 
 ### Explicit heartbeat (alternative)
 
@@ -328,3 +331,38 @@ fault, `COOLING` denotes a closing demand even after the valve reaches 0%.
 
 The public examples do not modify an existing private heating configuration.
 See [validation results](VALIDATION.md) for what has actually been tested.
+
+## Heat-source diagnostics
+
+Add these optional entities inside each `mixing_valve_climate` definition:
+
+```yaml
+heat_source_status:
+  name: Mixed water heat source status
+heat_source_age:
+  name: Mixed water heat source age
+```
+
+Both default to Home Assistant's diagnostic entity category and work while the
+controller is OFF or the valve is initializing. The status is the effective state
+used by regulation: `available` means confirmed heat availability, `unavailable`
+means confirmed absence of heat, and `unknown` means no valid information (including
+expiry, disconnect or a received unknown value).
+
+The age is elapsed seconds since the last `set_heat_source` call. Each received
+message resets it, even if the value is unchanged or unknown. It is unknown until
+the first receipt after boot. With the example's 30-second requests it should
+regularly return to zero; without new replies it keeps increasing. It updates at
+one-second resolution and continues across timeout, disconnect and clock rollover.
+This confirms delivery of HA's state, not the freshness of the boiler's own telemetry.
+
+For local connection loss use `mixing_valve_climate.invalidate_heat_source`, which
+clears validity without pretending a new message arrived or resetting the age:
+
+```yaml
+- mixing_valve_climate.invalidate_heat_source: water_controller
+```
+
+The provided direct-import package already uses this action. Update custom
+disconnect handlers likewise if they previously sent `state: unknown` every second.
+Actual received unknown values should still use `set_heat_source`.

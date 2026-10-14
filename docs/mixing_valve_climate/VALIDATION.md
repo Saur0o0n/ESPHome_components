@@ -107,3 +107,12 @@ The API transport test uses loopback port 6058 and temporary preferences; do not
 run two copies of this test concurrently. It requires `aioesphomeapi`, provided by
 the tested ESPHome environment. Actual HA entity IDs and boiler telemetry still
 require validation on the running installation; no firmware was flashed.
+
+## Heat-source diagnostic checks
+
+Deterministic tests cover initially unknown age, unchanged-message renewal,
+explicit unknown receipts, timeout, repeated local invalidation without an age
+reset, updates while OFF, independent instances and elapsed time beyond a complete
+32-bit clock cycle. Generated YAML exercises the invalidation action without API.
+The native TCP test checks diagnostic entity categories and seconds units, effective
+on/off/unknown states, receipt renewal, age after expiry, and age after disconnect.

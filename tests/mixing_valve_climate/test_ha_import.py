@@ -1,6 +1,7 @@
 """Native-API integration test: a simulated HA peer drives real host firmware."""
 import asyncio
 import os
+import math
 from pathlib import Path
 import subprocess
 import tempfile
@@ -23,6 +24,10 @@ async def exercise():
         client = APIClient('127.0.0.1', 6058, '')
         await client.connect(login=True)
         entities, _ = await client.list_entities_services()
+        diagnostics = {entity.name: entity for entity in entities if entity.name in ('Heat source status', 'Heat source age')}
+        assert len(diagnostics) == 2, diagnostics
+        assert all(entity.entity_category.name == 'DIAGNOSTIC' for entity in diagnostics.values()), diagnostics
+        assert diagnostics['Heat source age'].unit_of_measurement == 's'
         names = {entity.key: entity.name for entity in entities}
         client.subscribe_states(lambda message: state.update({names.get(message.key): message.state})
                                 if hasattr(message, 'state') else None)
@@ -50,6 +55,14 @@ async def exercise():
             await asyncio.sleep(0.025)
         raise AssertionError((value, state, counts))
 
+    async def diagnostic(status, age_check):
+        deadline = asyncio.get_running_loop().time() + 2
+        while asyncio.get_running_loop().time() < deadline:
+            if state.get('Heat source status') == status and age_check(state.get('Heat source age', -1)):
+                return
+            await asyncio.sleep(0.025)
+        raise AssertionError(('diagnostics', status, state))
+
     try:
         for attempt in range(60):
             try:
@@ -62,6 +75,7 @@ async def exercise():
                     raise
                 await asyncio.sleep(0.05)
         await expect('opening')
+        await diagnostic('unknown', math.isnan)
         # A formerly absent entity is discovered by a current-state request.
         source = 'off'
         await expect('waiting_for_heat')
@@ -71,18 +85,22 @@ async def exercise():
         assert counts['requests'] >= before + 5, counts
         assert counts['subscriptions'] == 1, counts
         assert state['Subscription count'] == 1, state  # No growing callback vector.
+        await diagnostic('unavailable', lambda age: age == 0)
         source = None  # Entity deleted while the API connection stays healthy.
         await expect('opening')
+        await diagnostic('unknown', lambda age: age >= 3)
         source = 'off'
         await expect('waiting_for_heat')
         for value in ('unknown', 'unavailable', 'unexpected'):
             source = value
             client.send_home_assistant_state('binary_sensor.test_boiler', None, value)
             await expect('opening')
+            await diagnostic('unknown', lambda age: age == 0)
             source = 'off'
             await expect('waiting_for_heat')
         source = 'on'
         await expect('opening')
+        await diagnostic('available', lambda age: age == 0)
         source = 'off'
         await expect('waiting_for_heat')
         logs_client = APIClient('127.0.0.1', 6058, '')
@@ -94,12 +112,14 @@ async def exercise():
         state.clear()
         await connect()
         await expect('opening')
+        await diagnostic('unknown', lambda age: age >= 1)
         source = 'off'
         await expect('waiting_for_heat')
         source = 'on'
         await expect('opening')
+        await diagnostic('available', lambda age: age == 0)
         assert state['Subscription count'] == 1, state
-        print('PASS: native API import, unchanged replies, deletion, unavailable, disconnect/reconnect, bounded subscriptions')
+        print('PASS: native API import, unchanged replies, deletion, unavailable, disconnect/reconnect, bounded subscriptions, diagnostic entities and receipt age')
     finally:
         if client is not None:
             await client.disconnect()

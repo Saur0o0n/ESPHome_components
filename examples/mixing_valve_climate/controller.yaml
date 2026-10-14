@@ -67,5 +67,10 @@ climate:
     status:
       name: Mixed water controller status
 
+    heat_source_status:
+      name: Heat source status
+    heat_source_age:
+      name: Heat source age
+
 # Native API is also used by the HA text-sensor import.
 api:

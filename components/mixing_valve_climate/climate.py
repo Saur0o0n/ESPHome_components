@@ -7,7 +7,9 @@ from esphome.components import climate, sensor, text_sensor, number
 from esphome.components.time_based_valve.valve import TimeBasedValve, travel_duration
 import esphome.config_validation as cv
 import esphome.final_validate as fv
-from esphome.const import CONF_ID, CONF_SENSOR, CONF_STATE, UNIT_CELSIUS, ENTITY_CATEGORY_CONFIG
+from esphome.const import (CONF_ID, CONF_SENSOR, CONF_STATE, UNIT_CELSIUS, UNIT_SECOND,
+                           ENTITY_CATEGORY_CONFIG, ENTITY_CATEGORY_DIAGNOSTIC,
+                           DEVICE_CLASS_DURATION, STATE_CLASS_MEASUREMENT)
 from . import mixing_valve_climate_ns as ns
 
 DEPENDENCIES = ["valve"]
@@ -77,6 +79,12 @@ CONFIG_SCHEMA = cv.All(
             "OFF": climate.CLIMATE_MODES["OFF"], "AUTO": climate.CLIMATE_MODES["AUTO"]}, upper=True),
         cv.Optional("restore_state", default=True): cv.boolean,
         cv.Optional("status"): text_sensor.text_sensor_schema(),
+        cv.Optional("heat_source_status"): text_sensor.text_sensor_schema(
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
+        cv.Optional("heat_source_age"): sensor.sensor_schema(
+            unit_of_measurement=UNIT_SECOND, accuracy_decimals=0,
+            device_class=DEVICE_CLASS_DURATION, state_class=STATE_CLASS_MEASUREMENT,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC),
     }).extend(cv.COMPONENT_SCHEMA), validate_limits,
 )
 
@@ -117,6 +125,10 @@ async def to_code(config):
             cg.add(getattr(var, "set_" + key)(entity))
     if "status" in config:
         cg.add(var.set_status_sensor(await text_sensor.new_text_sensor(config["status"])))
+    if "heat_source_status" in config:
+        cg.add(var.set_heat_source_status_sensor(await text_sensor.new_text_sensor(config["heat_source_status"])))
+    if "heat_source_age" in config:
+        cg.add(var.set_heat_source_age_sensor(await sensor.new_sensor(config["heat_source_age"])))
 
 
 @automation.register_action(
@@ -145,3 +157,15 @@ async def request_heat_source_to_code(config, action_id, template_arg, args):
     var = cg.new_Pvariable(action_id, template_arg)
     cg.add(var.set_entity_id(config["entity_id"]))
     return var
+
+
+InvalidateHeatSourceAction = ns.class_("InvalidateHeatSourceAction", automation.Action)
+
+
+@automation.register_action(
+    "mixing_valve_climate.invalidate_heat_source", InvalidateHeatSourceAction,
+    cv.maybe_simple_value({cv.Required(CONF_ID): cv.use_id(MixingValveClimate)}, key=CONF_ID),
+    synchronous=True,
+)
+async def invalidate_heat_source_to_code(config, action_id, template_arg, args):
+    return cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))

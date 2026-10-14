@@ -34,6 +34,4 @@ interval:
               api.connected:
                 state_subscription_only: true
           then:
-            - mixing_valve_climate.set_heat_source:
-                id: water_controller
-                state: unknown
+            - mixing_valve_climate.invalidate_heat_source: water_controller

@@ -29,6 +29,10 @@ esphome:
           valve_tests::check(id(controller).target_temperature == 32, "generated climate action");
           valve_tests::check(id(controller).get_heat_source() == mixing_valve_climate::HeatSource::AVAILABLE,
                              "generated heartbeat action");
+      - mixing_valve_climate.invalidate_heat_source: controller
+      - lambda: |-
+          valve_tests::check(id(controller).get_heat_source() == mixing_valve_climate::HeatSource::UNKNOWN,
+                             "generated invalidation action");
       - mixing_valve_climate.set_heat_source:
           id: controller
           state: !lambda return std::string("unknown");
@@ -81,3 +85,7 @@ climate:
       name: Fast closing offset
     status:
       name: Controller status
+    heat_source_status:
+      name: Heat source status
+    heat_source_age:
+      name: Heat source age

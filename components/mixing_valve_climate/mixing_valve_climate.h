@@ -38,6 +38,8 @@ class MixingValveClimate : public climate::Climate, public Component {
   void set_sensor(sensor::Sensor *value) { sensor_ = value; }
   void set_valve(time_based_valve::TimeBasedValve *value) { valve_ = value; }
   void set_status_sensor(text_sensor::TextSensor *value) { status_sensor_ = value; }
+  void set_heat_source_status_sensor(text_sensor::TextSensor *value) { heat_source_status_sensor_ = value; }
+  void set_heat_source_age_sensor(sensor::Sensor *value) { heat_source_age_sensor_ = value; }
   void set_default_target_temperature(float value) { default_target_temperature_ = value; }
   void set_min_target_temperature(float value) { min_target_temperature_ = value; }
   void set_max_target_temperature(float value) { max_target_temperature_ = value; }
@@ -59,6 +61,8 @@ class MixingValveClimate : public climate::Climate, public Component {
   // Every invocation is a new heartbeat, even when the state has not changed.
   void set_heat_source(const std::string &state);
   HeatSource get_heat_source() const;
+  // Local loss of validity is not a received heartbeat.
+  void invalidate_heat_source();
   Status get_status() const { return status_; }
 
  protected:
@@ -68,6 +72,7 @@ class MixingValveClimate : public climate::Climate, public Component {
   virtual uint32_t now_ms_() const;
   void accept_temperature_(float value);
   void evaluate_();
+  void publish_heat_source_diagnostics_();
   void command_(Command command);
   void report_(Status status, climate::ClimateAction action);
   bool valid_parameter_(Parameter parameter, float value) const;
@@ -80,6 +85,11 @@ class MixingValveClimate : public climate::Climate, public Component {
 
   sensor::Sensor *sensor_{nullptr};
   text_sensor::TextSensor *status_sensor_{nullptr};
+  text_sensor::TextSensor *heat_source_status_sensor_{nullptr};
+  sensor::Sensor *heat_source_age_sensor_{nullptr};
+  uint64_t heat_age_ms_{0};
+  uint32_t heat_age_updated_at_{0};
+  bool heat_ever_received_{false};
   time_based_valve::TimeBasedValve *valve_{nullptr};
   float default_target_temperature_{30}, min_target_temperature_{18}, max_target_temperature_{46};
   float deadband_{2}, max_temperature_{50}, overtemperature_hysteresis_{2};
@@ -99,6 +109,14 @@ template<typename... Ts> class HeatSourceAction : public Action<Ts...> {
   explicit HeatSourceAction(MixingValveClimate *parent) : parent_(parent) {}
   TEMPLATABLE_VALUE(std::string, state)
   void play(const Ts &...x) override { parent_->set_heat_source(state_.value(x...)); }
+ protected:
+  MixingValveClimate *parent_;
+};
+
+template<typename... Ts> class InvalidateHeatSourceAction : public Action<Ts...> {
+ public:
+  explicit InvalidateHeatSourceAction(MixingValveClimate *parent) : parent_(parent) {}
+  void play(const Ts &...x) override { parent_->invalidate_heat_source(); }
  protected:
   MixingValveClimate *parent_;
 };

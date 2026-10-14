@@ -90,6 +90,7 @@ void MixingValveClimate::setup() {
     sensor_seen_ = true;
   }
   ready_ = true;
+  publish_heat_source_diagnostics_();
   evaluate_();
   publish_state();
 }
@@ -109,8 +110,43 @@ void MixingValveClimate::set_heat_source(const std::string &state) {
                  state == "unavailable" ? HeatSource::UNAVAILABLE : HeatSource::UNKNOWN;
   heat_received_at_ = now_ms_();
   heat_seen_ = true;
+  heat_ever_received_ = true;
+  heat_age_ms_ = 0;
+  heat_age_updated_at_ = heat_received_at_;
+  publish_heat_source_diagnostics_();
   if (ready_)
     evaluate_();
+}
+
+void MixingValveClimate::invalidate_heat_source() {
+  heat_seen_ = false;
+  heat_source_ = HeatSource::UNKNOWN;
+  publish_heat_source_diagnostics_();
+  if (ready_)
+    evaluate_();
+}
+
+void MixingValveClimate::publish_heat_source_diagnostics_() {
+  if (heat_ever_received_) {
+    const uint32_t now = now_ms_();
+    // Accumulate elapsed intervals so age keeps growing across millis() wraps.
+    heat_age_ms_ += uint32_t(now - heat_age_updated_at_);
+    heat_age_updated_at_ = now;
+  }
+  if (heat_source_status_sensor_ != nullptr) {
+    const auto state = get_heat_source();
+    const char *value = state == HeatSource::AVAILABLE ? "available" :
+                        state == HeatSource::UNAVAILABLE ? "unavailable" : "unknown";
+    if (!heat_source_status_sensor_->has_state() || heat_source_status_sensor_->state != value)
+      heat_source_status_sensor_->publish_state(value);
+  }
+  if (heat_source_age_sensor_ != nullptr) {
+    const float age = heat_ever_received_ ? static_cast<float>(heat_age_ms_ / 1000) : NAN;
+    const float previous = heat_source_age_sensor_->state;
+    if (!heat_source_age_sensor_->has_state() ||
+        (std::isnan(age) != std::isnan(previous)) || (!std::isnan(age) && age != previous))
+      heat_source_age_sensor_->publish_state(age);
+  }
 }
 
 HeatSource MixingValveClimate::get_heat_source() const {
@@ -146,6 +182,7 @@ void MixingValveClimate::loop() {
   // after a complete millis() wrap with no updates.
   if (heat_seen_ && uint32_t(now_ms_() - heat_received_at_) >= heat_source_timeout_)
     heat_seen_ = false;
+  publish_heat_source_diagnostics_();
   if (sensor_seen_ && uint32_t(now_ms_() - sensor_received_at_) >= sensor_timeout_) {
     sensor_seen_ = false;
     current_temperature = NAN;
@@ -267,6 +304,8 @@ void MixingValveClimate::evaluate_() {
 void MixingValveClimate::dump_config() {
   LOG_CLIMATE("", "Mixing Valve Climate", this);
   LOG_SENSOR("  ", "Mixed water temperature", sensor_);
+  LOG_TEXT_SENSOR("  ", "Heat source status", heat_source_status_sensor_);
+  LOG_SENSOR("  ", "Heat source age", heat_source_age_sensor_);
   ESP_LOGCONFIG(TAG, "  Deadband: +/- %.2f C; maximum: %.2f C; reset difference: %.2f C", deadband_,
                 max_temperature_, overtemperature_hysteresis_);
   ESP_LOGCONFIG(TAG, "  Fast closing offset: %.2f C; hysteresis: %.2f C", fast_close_offset_, fast_close_hysteresis_);

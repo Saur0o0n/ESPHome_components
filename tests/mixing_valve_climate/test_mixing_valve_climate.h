@@ -24,8 +24,11 @@ class TestClimate : public MixingValveClimate {
 struct Fixture {
   TestValve v{0.5f};
   sensor::Sensor sensor;
+  sensor::Sensor heat_age;
+  text_sensor::TextSensor heat_status;
   TestClimate c{&v};
   explicit Fixture(float temperature = 30, bool remote = false, uint32_t key = 0) {
+    c.set_heat_source_age_sensor(&heat_age); c.set_heat_source_status_sensor(&heat_status);
     c.set_sensor(&sensor); c.set_valve(&v); c.set_restore_state(false);
     c.set_heat_source_required(remote); c.set_default_mode(CLIMATE_MODE_AUTO);
     c.set_sensor_timeout(300000);
@@ -38,6 +41,34 @@ struct Fixture {
 };
 
 inline void run() {
+  {
+    Fixture f, other;
+    check(f.heat_status.state == "unknown" && std::isnan(f.heat_age.state), "no receipt has unknown status and age");
+    f.c.make_call().set_mode(CLIMATE_MODE_OFF).perform();
+    f.c.set_heat_source("unavailable");
+    check(f.heat_status.state == "unavailable" && f.heat_age.state == 0, "diagnostics update while OFF");
+    f.advance(1500); check(f.heat_age.state == 1, "age counts whole elapsed seconds");
+    f.c.set_heat_source("unavailable"); check(f.heat_age.state == 0, "unchanged receipt resets age");
+    f.advance(90000);
+    check(f.heat_status.state == "unknown" && f.heat_age.state == 90, "timeout changes status without resetting age");
+    f.c.invalidate_heat_source(); f.advance(1000); f.c.invalidate_heat_source();
+    check(f.heat_age.state == 91, "repeated local invalidation does not reset receipt age");
+    f.c.set_heat_source("unknown"); check(f.heat_age.state == 0, "received unknown is a heartbeat");
+    check(other.heat_status.state == "unknown" && std::isnan(other.heat_age.state), "diagnostics are per controller");
+    other.c.set_default_mode(CLIMATE_MODE_AUTO);
+    other.v.set_start_position(time_based_valve::StartPosition::CLOSED);
+    other.v.setup();
+    other.c.set_heat_source("available");
+    check(other.v.is_initializing() && other.heat_status.state == "available",
+          "source diagnostics update during valve initialization");
+    f.v.clock = UINT32_MAX - 500; f.c.set_heat_source("available"); f.advance(1500);
+    check(f.heat_age.state == 1 && f.heat_status.state == "available", "age crosses millis wrap");
+    f.advance(0x80000000UL); const float old_age = f.heat_age.state;
+    f.advance(0x80000000UL);
+    check(f.heat_age.state > old_age && f.heat_age.state > 4294967.0f && f.heat_status.state == "unknown",
+          "expired age continues beyond one full millis cycle");
+  }
+
   {
     Fixture f(25, false);
     check(f.v.open_output, "optional source starts locally without any message");

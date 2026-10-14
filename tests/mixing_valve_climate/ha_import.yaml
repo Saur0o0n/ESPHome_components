@@ -50,3 +50,7 @@ climate:
     restore_state: false
     status:
       name: Controller status
+    heat_source_status:
+      name: Heat source status
+    heat_source_age:
+      name: Heat source age
