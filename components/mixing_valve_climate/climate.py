@@ -129,3 +129,19 @@ async def heat_source_to_code(config, action_id, template_arg, args):
     var = cg.new_Pvariable(action_id, template_arg, await cg.get_variable(config[CONF_ID]))
     cg.add(var.set_state(await cg.templatable(config[CONF_STATE], args, cg.std_string)))
     return var
+
+
+RequestHeatSourceAction = ns.class_("RequestHeatSourceAction", automation.Action)
+
+
+@automation.register_action(
+    "mixing_valve_climate.request_heat_source", RequestHeatSourceAction,
+    cv.All(cv.Schema({cv.Required("entity_id"): cv.entity_id}), cv.requires_component("api")),
+    synchronous=True,
+)
+async def request_heat_source_to_code(config, action_id, template_arg, args):
+    cg.add_define("USE_MIXING_VALVE_HA_REQUEST")
+    cg.add_define("USE_API_HOMEASSISTANT_STATES")
+    var = cg.new_Pvariable(action_id, template_arg)
+    cg.add(var.set_entity_id(config["entity_id"]))
+    return var

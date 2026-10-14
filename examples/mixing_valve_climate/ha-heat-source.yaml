@@ -1,0 +1,39 @@
+# ESPHome package: direct import through the native API, no HA automation.
+# Replace the source entity here; on/off are raw HA states, not UI labels.
+substitutions:
+  boiler_heat_source_entity: binary_sensor.boiler_floor_heating_active
+  boiler_heat_source_refresh_interval: 30s
+  boiler_heat_source_timeout: 90s
+
+text_sensor:
+  - platform: homeassistant
+    id: boiler_heat_source_state
+    entity_id: ${boiler_heat_source_entity}
+    internal: true
+    on_value:
+      then:
+        - mixing_valve_climate.set_heat_source:
+            id: water_controller
+            state: !lambda |-
+              if (x == "on") return std::string("available");
+              if (x == "off") return std::string("unavailable");
+              return std::string("unknown");
+
+# Refresh from HA itself, never from a cached local value. Missing entities
+# produce no response and expire through heat_source_timeout.
+interval:
+  - interval: ${boiler_heat_source_refresh_interval}
+    then:
+      - mixing_valve_climate.request_heat_source:
+          entity_id: ${boiler_heat_source_entity}
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            not:
+              api.connected:
+                state_subscription_only: true
+          then:
+            - mixing_valve_climate.set_heat_source:
+                id: water_controller
+                state: unknown

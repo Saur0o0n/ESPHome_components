@@ -1,0 +1,52 @@
+substitutions:
+  boiler_heat_source_entity: binary_sensor.test_boiler
+  boiler_heat_source_refresh_interval: 250ms
+  boiler_heat_source_timeout: 3s
+esphome:
+  name: mixing-ha-import-test
+host:
+logger:
+  level: ERROR
+api:
+  port: 6058
+  reboot_timeout: 0s
+packages:
+  ha_heat_source: !include ../../examples/mixing_valve_climate/ha-heat-source.yaml
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [time_based_valve, mixing_valve_climate]
+valve:
+  - platform: time_based_valve
+    id: mixing_valve
+    name: Test Valve
+    open_duration: 120s
+    close_duration: 120s
+    open_action:
+      - lambda: return;
+    close_action:
+      - lambda: return;
+    stop_action:
+      - lambda: return;
+sensor:
+  - platform: template
+    id: water
+    lambda: return 25.0f;
+    update_interval: 100ms
+  - platform: template
+    name: Subscription count
+    lambda: return api::global_api_server->get_state_subs().size();
+    update_interval: 100ms
+climate:
+  - platform: mixing_valve_climate
+    id: water_controller
+    name: Test Climate
+    sensor: water
+    valve_id: mixing_valve
+    heat_source_required: false
+    heat_source_timeout: ${boiler_heat_source_timeout}
+    default_mode: AUTO
+    restore_state: false
+    status:
+      name: Controller status

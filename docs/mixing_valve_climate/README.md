@@ -37,7 +37,7 @@ climate:
     max_temperature: 50°C
     sensor_timeout: 30s
     default_mode: 'OFF'
-    heat_source_required: true
+    heat_source_required: false
     heat_source_timeout: 90s
     status:
       name: Mixed water controller status
@@ -59,7 +59,8 @@ For a target of **30°C** and `deadband: 2°C`:
 | From 28°C through 32°C, inclusive | STOP, including cancellation of pending pulses |
 | Above 32°C through 37°C, before fast closing activates | Pulsed closing toward 0% |
 | Above 37°C | Continuous closing toward 0%; remain continuous until at/below 36°C |
-| Below 28°C, heat unavailable or unknown | STOP; do not open |
+| Below 28°C, confirmed heat unavailable | STOP; do not open |
+| Below 28°C, heat unknown/missing/expired | Pulsed opening if optional; STOP if `heat_source_required: true` |
 | At or above `max_temperature` | Continuous closing, including in OFF |
 | Invalid or expired temperature, in AUTO | Continuous closing |
 
@@ -115,7 +116,7 @@ reports `IDLE`. `status` distinguishes waiting, startup, and protection states.
 | `max_temperature` | `50°C` | Measured-temperature threshold for continuous closing |
 | `overtemperature_hysteresis` | `2°C` | A fresh sample at/below maximum minus this difference clears protection |
 | `sensor_timeout` | `30s` | Maximum age of a received temperature sample |
-| `heat_source_required` | `false` | Require a fresh `available` heartbeat before opening |
+| `heat_source_required` | `false` | When false, use a known source state but fall back to local regulation if unknown; when true, require fresh confirmation before opening |
 | `heat_source_timeout` | `90s` | Validity of the last heat-source heartbeat |
 | `default_mode` | `OFF` | `OFF` or `AUTO`, used when settings are not restored |
 | `restore_state` | `true` | Restore the saved mode and target after reboot |
@@ -170,12 +171,84 @@ speed at a completed closed endpoint does not initiate another overrun.
 
 ## Remote boiler state through Home Assistant
 
-With `heat_source_required: true`, the controller initially treats the source as
-unknown. Both `unavailable` (for example, a DHW cycle) and `unknown` block opening
-but permit temperature-driven closing. Closing does not depend on HA. With the
-option disabled, normal regulation needs only the local temperature measurement.
+`heat_source_required` controls whether missing information inhibits opening.
+It does **not** disable the input:
 
-The action below accepts `available`, `unavailable`, or `unknown`:
+| Effective source state | `false` (optional, default) | `true` (required) |
+|---|---|---|
+| `available` | Normal temperature regulation | Normal temperature regulation |
+| `unavailable` (confirmed no heat) | Inhibit opening | Inhibit opening |
+| `unknown`, missing, invalid or expired | Local temperature regulation | Inhibit opening |
+
+Temperature-driven closing, fast closing and overtemperature protection remain
+available under either policy. The source state is never persisted across reboot.
+This changes earlier releases, where `false` ignored even a known source state.
+The signal should describe actual heat delivery to the circuit, not just user
+enablement of heating. Whether an inactive boiler justifies inhibiting opening
+must be checked for the installation, especially with a shared hydraulic separator.
+
+### Direct HA import (no HA automation)
+
+The recommended example is the ESPHome package
+[ha-heat-source.yaml](../../examples/mixing_valve_climate/ha-heat-source.yaml),
+used by both MCU examples. Edit its substitutions or override them in your main YAML:
+
+```yaml
+substitutions:
+  boiler_heat_source_entity: binary_sensor.boiler_floor_heating_active
+  boiler_heat_source_refresh_interval: 30s
+  boiler_heat_source_timeout: 90s
+```
+
+It imports the entity as a `homeassistant` **text sensor**, even if the source is
+a binary sensor. The raw states `on` and `off` map to controller states `available`
+and `unavailable`. HA states `unknown`, `unavailable`, empty or unexpected text
+map to controller `unknown`. In particular, HA `unavailable` is **missing data**,
+not confirmation that the boiler is off. Localized dashboard labels such as
+Hot/Normal are not used for comparisons.
+
+HA sends the initial state and subsequent changes through the existing native
+API connection. The package also requests the current state every 30 s with:
+
+```yaml
+- mixing_valve_climate.request_heat_source:
+    entity_id: ${boiler_heat_source_entity}
+```
+
+This action requires `api:` and an existing `homeassistant` text-sensor import
+for that entity. It sends a native API one-shot state request without creating
+additional subscriptions. It does not call an HA service and needs no HA
+automation or permission to execute HA actions. Each actual response, including
+an unchanged `off`, refreshes the controller's `heat_source_timeout`. Never
+refresh validity just by reading the cached ESPHome text-sensor value.
+
+A source entity missing from startup sends no state: the controller stays unknown.
+If the entity is deleted after providing a value, HA can silently stop sending
+updates. Periodic requests then receive no response, so the last value expires
+90 s after its last response. An entity created/recreated later is picked up by
+subscription updates or a subsequent request. Set the refresh interval comfortably
+below the timeout (defaults 30 s and 90 s).
+
+The package checks API connectivity once per second using
+`api.connected: {state_subscription_only: true}`. A logs-only connection does not
+keep the source valid. After loss of the HA state-subscribing connection is
+**detected**, the package clears the source within about one additional second;
+network failure detection itself may take longer. Reconnection must supply a fresh
+state; the cached import is not replayed as a heartbeat. Timeout remains the fallback
+when the connection appears alive but no entity responses arrive.
+
+The API responses confirm HA's current stored state, not the freshness of the
+physical boiler's telemetry. The upstream OpenTherm integration must mark lost
+telemetry unavailable when appropriate. A stable `on`/`off` state can legitimately
+last for hours and must not expire merely because it did not change.
+
+The example addresses `water_controller`. For two controllers, call
+`mixing_valve_climate.set_heat_source` for both IDs in the text sensor's `on_value`
+and in the disconnect branch; share the import and the request interval.
+
+### Explicit heartbeat (alternative)
+
+The existing action is still available for other transports:
 
 ```yaml
 - mixing_valve_climate.set_heat_source:
@@ -183,11 +256,9 @@ The action below accepts `available`, `unavailable`, or `unknown`:
     state: available
 ```
 
-`state` also accepts a lambda returning a string. Unrecognized dynamic strings
-are treated as unknown. Every call is a fresh heartbeat, even if its value is
-unchanged. Availability is never persisted across reboot.
-
-For HA, expose a native API action:
+It accepts `available`, `unavailable`, `unknown`, or a lambda returning a string.
+Unrecognized strings become unknown. Every call refreshes the receipt timestamp.
+An optional native API action can expose it to HA:
 
 ```yaml
 api:
@@ -201,29 +272,13 @@ api:
             state: !lambda return state;
 ```
 
-For two controllers, put two `mixing_valve_climate.set_heat_source` actions under
-`then`, referencing their respective IDs. The boiler signal can be shared.
+[home-assistant.yaml](../../examples/mixing_valve_climate/home-assistant.yaml)
+remains an alternative HA automation example. Choose one input path; do not run
+both against the same controller. Missing/expired heartbeats follow the same
+optional/required policy above.
 
-Use the [HA automation example](../../examples/mixing_valve_climate/home-assistant.yaml)
-to send a heartbeat every 30 seconds and immediately on source-state changes.
-Replace its placeholder boiler entities and generated ESPHome action name.
-The boiler-connected entity must represent the **boiler device's** connectivity.
-A confirmed active floor-heating circuit maps to `available`, an inactive one to
-`unavailable`, and any missing/unknown/disconnected input to `unknown`.
-
-The heartbeat proves the HA-to-controller path was refreshed. It does not prove
-the boiler telemetry itself is current. The producer must check availability and,
-where necessary, telemetry freshness before sending `available`. Do not refresh
-from an unchecked cached boolean. A legitimate boiler state can stay unchanged
-for hours, so its last-change time alone is not a freshness test.
-
-When HA or the delivery path disappears, opening is inhibited after the configured
-timeout (up to 90 s by default), not immediately. A received `unknown` or
-`unavailable` message inhibits opening immediately. The timeout is a policy
-setting, not a physical protection response time.
-
-Reference: [ESPHome user-defined API actions](https://esphome.io/components/api/#user-defined-actions)
-and [Home Assistant time-pattern triggers](https://www.home-assistant.io/docs/automation/trigger/#time-pattern-trigger).
+References: [HA text-sensor import](https://esphome.io/components/text_sensor/homeassistant/),
+[ESPHome native API](https://esphome.io/components/api/).
 
 ## Startup, OFF and protection
 
@@ -266,7 +321,7 @@ fault, `COOLING` denotes a closing demand even after the valve reaches 0%.
    target temperature. HA will offer `AUTO` and `OFF`, not `HEAT_COOL` or two targets.
 4. Remove the old supplemental-action/relay-pulse control path, including delayed
    STOP actions, and update automations that refer to the old climate modes or IDs.
-5. Add the heat-source heartbeat before using `heat_source_required: true`.
+5. Add the HA import package or an explicit heartbeat before using `heat_source_required: true`.
 6. Start in OFF, check the measured temperature and status, then enable AUTO with
    a supervised target. Verify direction, timing, CWU interruption, signal loss,
    temperature sensor failure, and protection on the actual installation.

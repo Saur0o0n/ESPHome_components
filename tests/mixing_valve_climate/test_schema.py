@@ -17,7 +17,7 @@ BASE["sensor"] = [{"platform": "template", "id": "water"}]
 BASE["climate"] = [{"platform": "mixing_valve_climate", "id": "controller", "name": "Water", "sensor": "water", "valve_id": "test_valve"}]
 
 class SchemaTests(unittest.TestCase):
-    def validate(self, updates=None, missing=None, action=None, error=None, duplicate=False, manual=False):
+    def validate(self, updates=None, missing=None, action=None, error=None, duplicate=False, manual=False, request=None, with_api=False):
         config = copy.deepcopy(BASE)
         config["climate"][0].update(updates or {})
         config["valve"][0]["manual_control"] = manual
@@ -26,6 +26,10 @@ class SchemaTests(unittest.TestCase):
             other["id"] = "second_controller"
             other["name"] = "Second controller"
             config["climate"].append(other)
+        if with_api:
+            config["api"] = {}
+        if request is not None:
+            config["esphome"]["on_boot"] = {"then": [{"mixing_valve_climate.request_heat_source": request}]}
         if missing:
             del config["climate"][0][missing]
         if action is not None:
@@ -40,6 +44,12 @@ class SchemaTests(unittest.TestCase):
             self.assertIn(error, result.stdout)
         else:
             self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_ha_request(self):
+        self.validate(request={"entity_id": "binary_sensor.test_boiler"}, with_api=True)
+        self.validate(request={"entity_id": "binary_sensor.test_boiler"}, error="api")
+        self.validate(request={"entity_id": "invalid"}, with_api=True, error="entity_id")
+        self.validate(request={}, with_api=True, error="entity_id")
 
     def test_defaults_and_options(self):
         self.validate()

@@ -39,6 +39,28 @@ struct Fixture {
 
 inline void run() {
   {
+    Fixture f(25, false);
+    check(f.v.open_output, "optional source starts locally without any message");
+    f.c.set_heat_source("unavailable");
+    check(f.c.get_status() == Status::WAITING_FOR_HEAT && !f.v.open_output,
+          "optional but confirmed unavailable source blocks opening");
+    f.advance(89900); check(!f.v.open_output, "optional off remains effective until timeout");
+    f.advance(100); check(f.v.open_output, "expired optional off falls back to local regulation");
+    f.c.set_heat_source("unavailable"); f.c.set_heat_source("unknown");
+    check(f.v.open_output, "explicit unknown releases optional inhibition immediately");
+    f.c.set_heat_source("unavailable"); f.c.set_heat_source("bad-value");
+    check(f.v.open_output, "invalid optional input is unknown, not off");
+    f.c.set_heat_source("unavailable"); f.sample(35);
+    check(f.v.close_output, "optional off still permits normal closing");
+    f.sample(40); check(f.c.get_status() == Status::FAST_CLOSING, "optional off permits fast closing");
+    f.sample(25); f.c.set_heat_source("available");
+    check(f.v.open_output, "fresh available resumes optional opening");
+    f.c.set_heat_source("unavailable");
+    for (int i=0; i<8; ++i) { f.advance(30000); f.sample(25); f.c.set_heat_source("unavailable"); }
+    check(!f.v.open_output, "repeated unchanged off responses refresh optional inhibition");
+  }
+
+  {
     Fixture f;
     check(f.c.mode == CLIMATE_MODE_AUTO && f.c.action == CLIMATE_ACTION_IDLE, "single target AUTO starts inside band");
     auto traits = f.c.get_traits();

@@ -1,17 +1,17 @@
 # Validation
 
-Validated on 2026-10-13 with ESPHome **2026.8.2**, using the `esphome-builder`
+Validated on 2026-10-14 with ESPHome **2026.8.2**, using the `esphome-builder`
 container. No firmware was flashed and no live Home Assistant actions were sent.
 
 ## Executed checks
 
 | Check | Result |
 |---|---|
-| Full ESPHome configuration loader, 7 schema test methods with subcases | PASS |
+| Full ESPHome configuration loader, 8 schema test methods with subcases | PASS |
 | Native host compilation and deterministic climate/valve integration tests | PASS |
 | Generated `climate.control` and static/templated heat-source actions | PASS |
 | HA heartbeat Jinja template, 16 connectivity/heating-state combinations | PASS |
-| Existing valve suite: 13 schema methods, legacy and pulsed behavioral tests | PASS |
+| Existing valve suite: 14 schema methods, legacy and pulsed behavioral tests | PASS |
 | ESP8266 nodemcuv2 example, Arduino framework | PASS |
 | ESP32 esp32dev example, ESP-IDF 5.5.5 | PASS |
 
@@ -83,3 +83,27 @@ The HA example was parsed and its template rendered against representative
 inputs. It was not loaded into a running HA instance and its placeholder entities
 and generated action name must be replaced. A heartbeat's freshness only confirms
 message delivery; boiler telemetry validity is the sender's responsibility.
+
+## Optional heat source and direct HA import
+
+The optional policy now uses fresh confirmed source states and falls back to local
+regulation on missing, unknown, invalid or expired input. Unit checks cover known
+off inhibiting opening, expiry releasing inhibition, unchanged off renewal, recovery,
+normal/fast closing and the existing required-source behavior.
+
+A second native host firmware imports a real `homeassistant` text sensor and runs
+the documented package. An `aioesphomeapi` client simulates HA over the native TCP
+protocol (no real HA instance is contacted). It verifies:
+
+- an entity absent from startup, later appearance, and on/off state propagation;
+- repeated requests refreshing an unchanged off value beyond the timeout;
+- silent entity deletion expiring the last off state while still connected;
+- raw HA unknown/unavailable/invalid text mapping to unknown, not confirmed off;
+- disconnect/reconnect, including a separate logs-only client that stays connected;
+- a constant subscription count across repeated polls and reconnects.
+
+Both ESP32 and ESP8266 climate examples compile with the direct-import package.
+The API transport test uses loopback port 6058 and temporary preferences; do not
+run two copies of this test concurrently. It requires `aioesphomeapi`, provided by
+the tested ESPHome environment. Actual HA entity IDs and boiler telemetry still
+require validation on the running installation; no firmware was flashed.

@@ -1,3 +1,6 @@
+packages:
+  ha_heat_source: !include ha-heat-source.yaml
+
 # Package shared by both MCU compilation examples.
 external_components:
   - source:
@@ -59,18 +62,10 @@ climate:
     sensor_timeout: 30s
     default_mode: 'OFF'
     restore_state: true
-    heat_source_required: true
-    heat_source_timeout: 90s
+    heat_source_required: false
+    heat_source_timeout: ${boiler_heat_source_timeout}
     status:
       name: Mixed water controller status
 
+# Native API is also used by the HA text-sensor import.
 api:
-  actions:
-    # Called periodically by HA, not only when the boiler state changes.
-    - action: heat_source_heartbeat
-      variables:
-        state: string
-      then:
-        - mixing_valve_climate.set_heat_source:
-            id: water_controller
-            state: !lambda return state;

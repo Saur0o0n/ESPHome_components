@@ -16,3 +16,6 @@ run(sys.executable, "-m", "esphome", "compile", "tests/mixing_valve_climate/host
 binary = ROOT / "tests/mixing_valve_climate/.esphome/build/mixing-climate-test/.pioenvs/mixing-climate-test/program"
 with tempfile.TemporaryDirectory(prefix="mixing-climate-prefs-") as prefs:
     run(str(binary), env={**os.environ, "ESPHOME_PREFDIR": prefs}, timeout=30)
+
+run(sys.executable, "-m", "esphome", "compile", "tests/mixing_valve_climate/ha_import.yaml")
+run(sys.executable, "tests/mixing_valve_climate/test_ha_import.py", timeout=40)

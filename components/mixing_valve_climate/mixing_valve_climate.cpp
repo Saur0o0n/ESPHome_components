@@ -250,7 +250,8 @@ void MixingValveClimate::evaluate_() {
     command_(fast_closing_ ? Command::CLOSE_CONTINUOUS : Command::CLOSE);
     report_(fast_closing_ ? Status::FAST_CLOSING : Status::CLOSING, CLIMATE_ACTION_COOLING);
   } else if (current_temperature < target_temperature - deadband_) {
-    if (heat_source_required_ && get_heat_source() != HeatSource::AVAILABLE) {
+    const auto heat = get_heat_source();
+    if (heat == HeatSource::UNAVAILABLE || (heat_source_required_ && heat == HeatSource::UNKNOWN)) {
       command_(Command::STOP);
       report_(Status::WAITING_FOR_HEAT, CLIMATE_ACTION_IDLE);
     } else {

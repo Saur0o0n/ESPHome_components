@@ -3,6 +3,7 @@
 #pragma once
 
 #include "esphome/core/component.h"
+#include "home_assistant_request.h"
 #include "esphome/core/automation.h"
 #include "esphome/core/preferences.h"
 #include "esphome/components/number/number.h"
