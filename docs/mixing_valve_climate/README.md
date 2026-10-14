@@ -304,10 +304,18 @@ References: [HA text-sensor import](https://esphome.io/components/text_sensor/ho
   explicit repeated OFF command stops a manual move too. Startup homing is allowed
   to finish; overtemperature protection remains active. Thus OFF does not always
   imply that the actuator is stationary.
-- In AUTO the controller owns the valve. Direct relay commands, old thermostats,
-  scripts with delayed STOP, and competing valve automations must be removed or
-  disabled for that valve. Use OFF for manual assistance; AUTO resumes automatic
-  regulation.
+- In AUTO, normal regulation sends a valve command only when its decision changes
+  (open, pulsed close, continuous close, or stop). Manual valve commands do not
+  cause the controller to repeat its previous command. You can therefore open,
+  close, stop or position the valve while the controller waits for heat or is idle,
+  without switching to OFF. Repeated temperature samples and unchanged boiler
+  messages do not cancel that manual movement. A later change in the regulation
+  decision can issue a new command; this is not a latched manual mode.
+- Overtemperature and invalid/stale temperature protection still correct
+  conflicting movement. Use valve commands for manual assistance, not raw relay
+  commands or scripts with delayed STOP that bypass the valve's movement tracking.
+- The controller status and climate action describe its regulation decision,
+  which can differ from the valve's actual movement after a manual command.
 - Setpoint and mode restoration uses ESPHome climate preferences and the normal
   platform flash-write policy. Very recent changes may not survive immediate
   power loss. Pulse sequences and remote availability are not restored.

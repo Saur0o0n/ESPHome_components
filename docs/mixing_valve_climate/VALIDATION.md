@@ -1,5 +1,9 @@
 # Validation
 
+The subsequent manual-control change makes normal valve commands transition-only,
+while retaining protection enforcement. No tests or compilation were run for that
+change at the user's request. The results below describe the earlier revision.
+
 Validated on 2026-10-14 with ESPHome **2026.8.2**, using the `esphome-builder`
 container. No firmware was flashed and no live Home Assistant actions were sent.
 

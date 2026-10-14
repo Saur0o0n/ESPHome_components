@@ -73,7 +73,7 @@ class MixingValveClimate : public climate::Climate, public Component {
   void accept_temperature_(float value);
   void evaluate_();
   void publish_heat_source_diagnostics_();
-  void command_(Command command);
+  void command_(Command command, bool enforce = false);
   void report_(Status status, climate::ClimateAction action);
   bool valid_parameter_(Parameter parameter, float value) const;
   void publish_parameters_();

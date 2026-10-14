@@ -192,9 +192,12 @@ void MixingValveClimate::loop() {
     evaluate_();
 }
 
-void MixingValveClimate::command_(Command command) {
-  // Issue transitions once. Never re-trigger a completed endpoint overrun.
-  bool changed = command != command_state_;
+void MixingValveClimate::command_(Command command, bool enforce) {
+  // Normal regulation issues decisions once; manual movement is not a new decision.
+  // Protection may still correct conflicting movement while its condition persists.
+  const bool changed = command != command_state_;
+  if (!changed && !enforce)
+    return;
   const bool same_closing = (command == Command::CLOSE || command == Command::CLOSE_CONTINUOUS) &&
                            (command_state_ == Command::CLOSE || command_state_ == Command::CLOSE_CONTINUOUS);
   command_state_ = command;
@@ -252,7 +255,7 @@ void MixingValveClimate::evaluate_() {
       // complete closing traversal, rather than trusting its partial estimate.
       valve_->position = 1.0f;
     }
-    command_(Command::CLOSE_CONTINUOUS);
+    command_(Command::CLOSE_CONTINUOUS, true);
     report_(Status::OVERTEMPERATURE, CLIMATE_ACTION_COOLING);
     return;
   }
@@ -272,7 +275,7 @@ void MixingValveClimate::evaluate_() {
   }
   if (!fresh || !std::isfinite(target_temperature)) {
     fast_closing_ = false;
-    command_(Command::CLOSE_CONTINUOUS);
+    command_(Command::CLOSE_CONTINUOUS, true);
     report_(Status::SENSOR_FAULT, CLIMATE_ACTION_COOLING);
     return;
   }
