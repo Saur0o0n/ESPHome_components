@@ -116,6 +116,7 @@ reports `IDLE`. `status` distinguishes waiting, startup, and protection states.
 | `max_temperature` | `50°C` | Measured-temperature threshold for continuous closing |
 | `overtemperature_hysteresis` | `2°C` | A fresh sample at/below maximum minus this difference clears protection |
 | `sensor_timeout` | `30s` | Maximum age of a received temperature sample |
+| `open_on_enable` | `0%` (disabled) | On an explicit OFF-to-AUTO transition, continuously open a fully closed valve to this position before normal regulation |
 | `heat_source_required` | `false` | When false, use a known source state but fall back to local regulation if unknown; when true, require fresh confirmation before opening |
 | `heat_source_timeout` | `90s` | Validity of the last heat-source heartbeat |
 | `default_mode` | `OFF` | `OFF` or `AUTO`, used when settings are not restored |
@@ -285,6 +286,20 @@ References: [HA text-sensor import](https://esphome.io/components/text_sensor/ho
 
 ## Startup, OFF and protection
 
+With `open_on_enable: 50%`, explicitly enabling AUTO starts a one-shot continuous
+move to 50% only if the valve is fully closed (position exactly 0%). Other positions
+are left to normal regulation. Repeated AUTO commands, setpoint changes and restored
+AUTO at boot do not trigger it. If homing is running, it finishes first, then the
+closed-position condition is checked. Start the circuit pump in `on_control` so it
+runs before this movement.
+
+This phase reports `enable_opening` and precedes the heat-source opening gate,
+including when the source is confirmed unavailable. Normal regulation resumes when
+the valve stops; it may then hold, open further or close according to temperature
+and source availability. OFF cancels the phase. Overtemperature and invalid/stale
+water-temperature protection take precedence and cancel it without retrying.
+
+
 - Normal regulation waits for the valve's `start_position` run to finish. It
   neither stops it nor queues control commands during initialization. Prefer
   `start_position: closed` for this application.
@@ -321,7 +336,7 @@ References: [HA text-sensor import](https://esphome.io/components/text_sensor/ho
   power loss. Pulse sequences and remote availability are not restored.
 
 Status values: `off`, `initializing`, `sensor_fault`, `overtemperature`,
-`waiting_for_heat`, `idle`, `opening`, `closing`, `fast_closing`. During protection or a sensor
+`waiting_for_heat`, `idle`, `opening`, `closing`, `fast_closing`, `enable_opening`. During protection or a sensor
 fault, `COOLING` denotes a closing demand even after the valve reaches 0%.
 
 ## Migrating an existing thermostat

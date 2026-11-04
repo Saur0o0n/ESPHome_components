@@ -15,7 +15,7 @@
 namespace esphome::mixing_valve_climate {
 
 enum class HeatSource : uint8_t { UNKNOWN, AVAILABLE, UNAVAILABLE };
-enum class Status : uint8_t { OFF, INITIALIZING, SENSOR_FAULT, OVERTEMPERATURE, WAITING_FOR_HEAT, IDLE, OPENING, CLOSING, FAST_CLOSING };
+enum class Status : uint8_t { OFF, INITIALIZING, SENSOR_FAULT, OVERTEMPERATURE, WAITING_FOR_HEAT, IDLE, OPENING, CLOSING, FAST_CLOSING, ENABLE_OPENING };
 
 enum class Parameter : uint8_t { DEADBAND, FAST_CLOSE_OFFSET };
 class MixingValveClimate;
@@ -54,6 +54,7 @@ class MixingValveClimate : public climate::Climate, public Component {
   void set_max_temperature(float value) { max_temperature_ = value; }
   void set_overtemperature_hysteresis(float value) { overtemperature_hysteresis_ = value; }
   void set_sensor_timeout(uint32_t value) { sensor_timeout_ = value; }
+  void set_open_on_enable(float value) { open_on_enable_ = value; }
   void set_heat_source_required(bool value) { heat_source_required_ = value; }
   void set_heat_source_timeout(uint32_t value) { heat_source_timeout_ = value; }
   void set_default_mode(climate::ClimateMode value) { default_mode_ = value; }
@@ -82,6 +83,8 @@ class MixingValveClimate : public climate::Climate, public Component {
   ParameterNumber *deadband_number_{nullptr}, *fast_close_offset_number_{nullptr};
   float fast_close_offset_{5}, fast_close_hysteresis_{1};
   bool fast_closing_{false};
+  float open_on_enable_{0};
+  bool enable_open_pending_{false}, enable_open_active_{false};
 
   sensor::Sensor *sensor_{nullptr};
   text_sensor::TextSensor *status_sensor_{nullptr};

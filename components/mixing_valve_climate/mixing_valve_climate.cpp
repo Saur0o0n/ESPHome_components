@@ -9,7 +9,7 @@ namespace esphome::mixing_valve_climate {
 using namespace climate;
 static const char *const TAG = "mixing_valve_climate";
 static const char *const STATUS_NAMES[] = {"off", "initializing", "sensor_fault", "overtemperature",
-                                        "waiting_for_heat", "idle", "opening", "closing", "fast_closing"};
+                                        "waiting_for_heat", "idle", "opening", "closing", "fast_closing", "enable_opening"};
 
 uint32_t MixingValveClimate::now_ms_() const { return millis(); }
 
@@ -156,8 +156,17 @@ HeatSource MixingValveClimate::get_heat_source() const {
 }
 
 void MixingValveClimate::control(const ClimateCall &call) {
-  if (call.get_mode().has_value())
+  if (call.get_mode().has_value()) {
+    if (*call.get_mode() == CLIMATE_MODE_AUTO && mode != CLIMATE_MODE_AUTO) {
+      // Only an explicit enable can request this one-shot movement, not heartbeats
+      // or setpoint updates. Homing, if still running, must finish first.
+      enable_open_pending_ = open_on_enable_ > 0 &&
+          (valve_->is_initializing() || valve_->position == valve::VALVE_CLOSED);
+    } else if (*call.get_mode() == CLIMATE_MODE_OFF) {
+      enable_open_pending_ = enable_open_active_ = false;
+    }
     mode = *call.get_mode();
+  }
   if (call.get_target_temperature().has_value() && std::isfinite(*call.get_target_temperature())) {
     float target = clamp(*call.get_target_temperature(), min_target_temperature_, max_target_temperature_);
     if (target != target_temperature) fast_closing_ = false;
@@ -243,6 +252,7 @@ void MixingValveClimate::evaluate_() {
   }
   // Protection has priority over OFF, source availability and startup homing.
   if (overtemperature_) {
+    enable_open_pending_ = enable_open_active_ = false;
     fast_closing_ = false;
     if (valve_->is_initializing()) {
       if (valve_->current_operation == valve::VALVE_OPERATION_CLOSING) {
@@ -274,10 +284,32 @@ void MixingValveClimate::evaluate_() {
     return;
   }
   if (!fresh || !std::isfinite(target_temperature)) {
+    enable_open_pending_ = enable_open_active_ = false;
     fast_closing_ = false;
     command_(Command::CLOSE_CONTINUOUS, true);
     report_(Status::SENSOR_FAULT, CLIMATE_ACTION_COOLING);
     return;
+  }
+  // Establish circulation before consulting source availability or normal demand.
+  // Temperature protection above remains active throughout this movement.
+  if (enable_open_pending_) {
+    enable_open_pending_ = false;
+    if (valve_->position == valve::VALVE_CLOSED) {
+      enable_open_active_ = true;
+      fast_closing_ = false;
+      command_state_ = Command::NONE;
+      valve_->control_position(open_on_enable_, time_based_valve::Movement::CONTINUOUS);
+    }
+  }
+  if (enable_open_active_) {
+    if (valve_->current_operation == valve::VALVE_OPERATION_OPENING &&
+        valve_->get_movement() == time_based_valve::Movement::CONTINUOUS) {
+      report_(Status::ENABLE_OPENING, CLIMATE_ACTION_HEATING);
+      return;
+    }
+    // The valve stops at the requested position. OFF/protection can cancel early;
+    // other valve commands also end this phase instead of being reissued here.
+    enable_open_active_ = false;
   }
   const float upper = target_temperature + deadband_;
   const float fast_threshold = upper + fast_close_offset_;

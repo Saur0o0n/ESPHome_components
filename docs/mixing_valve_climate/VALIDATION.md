@@ -1,5 +1,9 @@
 # Validation
 
+The optional `open_on_enable` phase was added on 2026-11-04 without running tests
+or compilation, following the user's validation preference. Earlier results below
+do not validate this phase.
+
 The subsequent manual-control change makes normal valve commands transition-only,
 while retaining protection enforcement. No tests or compilation were run for that
 change at the user's request. The results below describe the earlier revision.

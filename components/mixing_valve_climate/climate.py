@@ -73,6 +73,7 @@ CONFIG_SCHEMA = cv.All(
         cv.Optional("max_temperature", default=50): temperature,
         cv.Optional("overtemperature_hysteresis", default=2): positive_temperature,
         cv.Optional("sensor_timeout", default="30s"): travel_duration,
+        cv.Optional("open_on_enable", default="0%"): cv.percentage,
         cv.Optional("heat_source_required", default=False): cv.boolean,
         cv.Optional("heat_source_timeout", default="90s"): travel_duration,
         cv.Optional("default_mode", default="OFF"): cv.enum({
@@ -114,7 +115,7 @@ async def to_code(config):
     cg.add(var.set_valve(await cg.get_variable(config["valve_id"])))
     for key in ("default_target_temperature", "min_target_temperature", "max_target_temperature",
                 "deadband", "fast_close_offset", "fast_close_hysteresis", "max_temperature", "overtemperature_hysteresis", "sensor_timeout",
-                "heat_source_required", "heat_source_timeout", "default_mode", "restore_state"):
+                "heat_source_required", "heat_source_timeout", "open_on_enable", "default_mode", "restore_state"):
         cg.add(getattr(var, "set_" + key)(config[key]))
     for key, parameter, low, high in (
         ("deadband_number", Parameter.DEADBAND, 0.1, deadband_max(config)),
